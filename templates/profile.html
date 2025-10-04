@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>loopin — profile</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: Inter, sans-serif;
+      background:#f7f7f7;
+      padding:40px;
+      margin:0;
+    }
+    .card {
+      max-width:600px;
+      margin:auto;
+      background:white;
+      padding:30px;
+      border-radius:12px;
+      box-shadow:0 8px 20px rgba(0,0,0,0.1);
+    }
+    h1 { font-size:24px; margin:0 0 20px; }
+    form { display:grid; gap:12px; margin-top:20px; }
+    input {
+      padding:12px;
+      border:1px solid #ccc;
+      border-radius:10px;
+      font-size:15px;
+    }
+    input:focus {
+      outline:none;
+      border-color:#2b7cff;
+      box-shadow:0 0 0 2px rgba(43,124,255,0.15);
+    }
+    button {
+      padding:12px;
+      border:none;
+      border-radius:10px;
+      background:#2b7cff;
+      color:white;
+      font-weight:600;
+      cursor:pointer;
+      transition:0.2s;
+    }
+    button:hover { background:#1e63e6; }
+    nav { margin-top:20px; }
+    a {
+      margin-right:15px;
+      color:#2b7cff;
+      text-decoration:none;
+      font-weight:600;
+    }
+    a:hover { text-decoration:underline; }
+    .alert {
+      margin-bottom:15px;
+      padding:10px 15px;
+      border-radius:8px;
+      font-size:14px;
+    }
+    .alert.success { background:#c6f6d5; color:#2f855a; }
+    .alert.error { background:#fed7d7; color:#c53030; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Hello, {{ user.username or user.email }} 👋</h1>
+    <p>Welcome to your profile page.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="post">
+      <label for="username">Update Display Name:</label>
+      <input type="text" id="username" name="username" value="{{ user.username }}" required>
+      <button type="submit">Update Username</button>
+    </form>
+
+    <nav>
+      <a href="/">🏠 Home</a>
+      <a href="/profile">🙍 Profile</a>
+      <a href="/logout">🚪 Logout</a>
+    </nav>
+  </div>
+</body>
+</html>
