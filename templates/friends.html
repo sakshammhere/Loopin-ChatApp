@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Loopin • Friends</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body class="bg">
+<header class="topbar">
+  <a class="brand" href="{{ url_for('chat_hub') }}">
+    <span class="brand-badge">L</span><span class="brand-text">Loopin</span>
+  </a>
+  <div class="top-actions">
+    <a class="btn" href="{{ url_for('profile_page') }}">Profile</a>
+    <a class="btn danger" href="{{ url_for('logout') }}">Logout</a>
+  </div>
+</header>
+
+<main class="center stage">
+  <div class="card wide">
+    <h2>Friends</h2>
+    {% if friends %}
+      <ul class="list">
+        {% for f in friends %}
+        <li>@{{ f.users.username if f.sender_id==user.id else f.peer.username }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No friends yet.</p>
+    {% endif %}
+
+    <h3 class="mt">Incoming Requests</h3>
+    {% if incoming %}
+      <ul class="list">
+        {% for r in incoming %}
+        <li>
+          <form method="POST" action="{{ url_for('respond_request') }}" class="inline">
+            <input type="hidden" name="request_id" value="{{ r.id }}" />
+            <span>@{{ r.users.username }}</span>
+            <button name="action" value="accept" class="mini">Accept</button>
+            <button name="action" value="reject" class="mini danger">Reject</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No incoming requests.</p>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>

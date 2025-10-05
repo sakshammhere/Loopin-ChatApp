@@ -1,19 +1,24 @@
 import os
 import hashlib
 import threading
+import queue
+import json
+import time
 from datetime import datetime
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import (
+    Flask, render_template, request, redirect, url_for,
+    session, flash, jsonify, Response, stream_with_context
+)
 from supabase import create_client, Client
 from passlib.hash import bcrypt
-from realtime import Socket
 
 # 1. Load env variables
 
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")  # ✅ Added anon key for realtime
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")  # needed for realtime (listener uses anon)
 SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "dev-secret")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
@@ -44,47 +49,108 @@ def verify_password(password: str, hashed: str) -> bool:
     except Exception:
         return False
 
-
-# 4. Realtime connection setup : Fixed version (uses anon key)
-def start_realtime_thread():
-    """Start realtime listener for 'messages' table using anon key (Supabase v2 Realtime)."""
+def are_friends(user_id: str, peer_id: str) -> bool:
+    # check if two users are friends (accepted)
     try:
-        # Realtime v2 requires anon key and correct websocket endpoint
-        websocket_url = f"wss://{SUPABASE_URL.split('//')[1]}/realtime/v1/websocket"
+        res = (
+            supabase.table("friends")
+            .select("id,status")
+            .or_(f"(sender_id.eq.{user_id},receiver_id.eq.{peer_id}),(sender_id.eq.{peer_id},receiver_id.eq.{user_id})")
+            .eq("status", "accepted").limit(1).execute()
+        )
+        return bool(res.data)
+    except Exception:
+        return False
 
-        from websocket import create_connection
-        import json, threading
+# 4. Realtime connection setup : uses anon key + correct endpoint
+#    + server-sent events broadcaster so /events stops 404 errors
 
-        def listen_realtime():
+_sse_subscribers_lock = threading.Lock()
+_sse_subscribers: list[queue.Queue] = []
+
+def _sse_subscribe() -> queue.Queue:
+    q = queue.Queue(maxsize=100)
+    with _sse_subscribers_lock:
+        _sse_subscribers.append(q)
+    return q
+
+def _sse_unsubscribe(q: queue.Queue):
+    with _sse_subscribers_lock:
+        try:
+            _sse_subscribers.remove(q)
+        except ValueError:
+            pass
+
+def _sse_broadcast(payload: dict):
+    dead = []
+    with _sse_subscribers_lock:
+        for q in _sse_subscribers:
             try:
-                ws = create_connection(f"{websocket_url}?apikey={os.getenv('SUPABASE_ANON_KEY')}&vsn=1.0.0")
-                print("✅ Connected to Supabase Realtime")
+                q.put_nowait(payload)
+            except queue.Full:
+                dead.append(q)
+        for q in dead:
+            try:
+                _sse_subscribers.remove(q)
+            except ValueError:
+                pass
 
-                # Subscribe to the public:messages channel
-                payload = {
-                    "topic": "realtime:public:messages",
-                    "event": "phx_join",
-                    "payload": {},
-                    "ref": 1
-                }
-                ws.send(json.dumps(payload))
-                print("📡 Listening for message inserts...")
+def start_realtime_thread():
+    # Start realtime listener for message table inserts
+    try:
+        ws_host = SUPABASE_URL.split("//")[1]
+        ws_url = f"wss://{ws_host}/realtime/v1/websocket"
+        from websocket import create_connection
+
+        def listen():
+            try:
+                # connect with anon key
+                ws = create_connection(f"{ws_url}?apikey={SUPABASE_ANON_KEY}&vsn=1.0.0")
+                print("realtime connected")
+                # join inserts on public:messages
+                join_msg = {"topic": "realtime:public:messages", "event": "phx_join", "payload": {}, "ref": 1}
+                ws.send(json.dumps(join_msg))
+                print("listening for message inserts...")
+
+                # heartbeat to keep phoenix channel alive
+                def heartbeat():
+                    ref = 2
+                    while True:
+                        try:
+                            ws.send(json.dumps({"topic": "phoenix", "event": "heartbeat", "payload": {}, "ref": ref}))
+                            ref += 1
+                            time.sleep(25)
+                        except Exception:
+                            break
+
+                threading.Thread(target=heartbeat, daemon=True).start()
 
                 while True:
-                    data = ws.recv()
-                    if '"INSERT"' in data:
-                        print(f"📩 New message received: {data}")
+                    raw = ws.recv()
+                    if not raw:
+                        break
+                    # basic filter: broadcast any payloads that include INSERT
+                    if '"INSERT"' in raw or '"INSERT"' in raw.upper():
+                        try:
+                            data = json.loads(raw)
+                            # supabase realtime payload has "payload" with "record" under key "new"
+                            new_row = None
+                            if isinstance(data, dict):
+                                payload = data.get("payload") or {}
+                                new_row = payload.get("record") or payload.get("new")
+                            if new_row:
+                                _sse_broadcast({"type": "message", "row": new_row})
+                        except Exception:
+                            pass
             except Exception as e:
-                print(f"⚠️ Realtime listener crashed: {e}")
+                print(f"realtime crashed: {e}")
 
-        threading.Thread(target=listen_realtime, daemon=True).start()
+        threading.Thread(target=listen, daemon=True).start()
     except Exception as e:
-        print(f"⚠️ Failed to start realtime thread: {e}")
-
-
-
+        print(f"Realtime connection failed: {e}")
 
 # 5. Authentication routes
+
 @app.route("/")
 def home():
     # Main chat hub — show all messages and dummy peer(chat not implemented yet)
@@ -92,7 +158,7 @@ def home():
         return redirect(url_for("auth_page"))
     user = current_user()
 
-    # Fetch user messages
+    # Fetch user messages (both directions), includes timestamps
     try:
         resp = (
             supabase.table("messages")
@@ -120,7 +186,7 @@ def auth_page():
     # Login/signup page (combined)
     return render_template("loginsignup.html")
 
-@app.route("/auth/signup", methods=["POST"])
+@app.route("/signup", methods=["POST"])
 def signup():
     # Registers a new user
     username = request.form.get("username", "").strip()
@@ -129,6 +195,12 @@ def signup():
 
     if not username or not email or not password:
         flash("Please fill all fields", "error")
+        return redirect(url_for("auth_page"))
+
+    # unique username check too
+    exists_u = supabase.table("users").select("id").eq("username", username).limit(1).execute()
+    if exists_u.data:
+        flash("username already taken", "error")
         return redirect(url_for("auth_page"))
 
     existing = supabase.table("users").select("id").eq("email", email).execute()
@@ -147,7 +219,7 @@ def signup():
     flash("Account created successfully! Please log in.", "info")
     return redirect(url_for("auth_page"))
 
-@app.route("/auth/login", methods=["POST"])
+@app.route("/login", methods=["POST"])
 def login():
     # Authenticate user credentials
     email = request.form.get("email", "").strip().lower()
@@ -164,7 +236,8 @@ def login():
             flash("Invalid credentials", "error")
             return redirect(url_for("auth_page"))
 
-        session["user"] = {"id": user["id"], "email": user["email"], "username": user["username"]}
+        # only store id + username (keep email private)
+        session["user"] = {"id": user["id"], "username": user["username"]}
         flash("Welcome back!", "success")
         return redirect(url_for("home"))
     except Exception as e:
@@ -179,165 +252,478 @@ def logout():
     flash("Logged out successfully.", "info")
     return redirect(url_for("auth_page"))
 
+# 6. Friends system (endpoints + pages)
 
-# 6. Friends system (pending implementation)
+@app.route("/api/users/search")
+def api_users_search():
+    # search users by username (username prefix matching), hides emails
+    if not current_user():
+        return jsonify({"error":"auth required"}), 401
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"users":[]})
+    res = supabase.table("users").select("id,username").ilike("username", f"{q}%").limit(10).execute()
+    # exclude self(user itself)
+    me = current_user()
+    users = [u for u in (res.data or []) if u["id"] != me["id"]]
+    return jsonify({"users": users})
+
 @app.route("/friends", methods=["GET"])
 def friends_page():
     # Display friend list and pending requests.
-
     if not current_user():
         return redirect(url_for("auth_page"))
     user = current_user()
 
-    friends = supabase.rpc("get_friends_list", {"user_id": user["id"]}).execute()
-    pending = supabase.rpc("get_pending_requests", {"user_id": user["id"]}).execute()
+    # accepted friendships involving me
+    friends = (
+        supabase.table("friends")
+        .select("id,status,sender_id,receiver_id,users:sender_id(username),peer:receiver_id(username)")
+        .or_(f"sender_id.eq.{user['id']},receiver_id.eq.{user['id']}")
+        .eq("status","accepted").execute()
+    )
+
+    # incoming friend requests (you are receiver, pending)
+    incoming = (
+        supabase.table("friends")
+        .select("id,sender_id,receiver_id,users:sender_id(username)")
+        .eq("receiver_id", user["id"]).eq("status","pending").execute()
+    )
+
+    # outgoing friend requests (you are sender, pending)
+    outgoing = (
+        supabase.table("friends")
+        .select("id,sender_id,receiver_id,peer:receiver_id(username)")
+        .eq("sender_id", user["id"]).eq("status","pending").execute()
+    )
 
     return render_template(
         "friends.html",
         user=user,
         friends=friends.data or [],
-        requests=pending.data or []
+        incoming=incoming.data or [],
+        outgoing=outgoing.data or []
     )
 
 @app.route("/friends/add", methods=["POST"])
 def add_friend():
-    # Send a friend request.
-
+    # Send a friend request by username.
     if not current_user():
         return redirect(url_for("auth_page"))
-    sender_id = current_user()["id"]
-    target_email = request.form.get("email")
+    me = current_user()
+    target_username = (request.form.get("username") or "").strip()
 
-    target = supabase.table("users").select("id").eq("email", target_email).execute()
-    if not target.data:
-        flash("No such user", "error")
-        return redirect(url_for("friends_page"))
+    if not target_username:
+        flash("enter a username", "error"); return redirect(url_for("friends_page"))
 
-    receiver_id = target.data[0]["id"]
-    supabase.table("friends").insert(
-        {"sender_id": sender_id, "receiver_id": receiver_id, "status": "pending"}
-    ).execute()
-    flash("Friend request sent!", "success")
+    lookup = supabase.table("users").select("id,username").eq("username", target_username).limit(1).execute()
+    if not lookup.data:
+        flash("no such user", "error"); return redirect(url_for("friends_page"))
+
+    target_id = lookup.data[0]["id"]
+    if target_id == me["id"]:
+        flash("you can’t add yourself", "error"); return redirect(url_for("friends_page"))
+
+    # prevent duplicate pending/accepted
+    existing = (
+        supabase.table("friends")
+        .select("id,status")
+        .or_(f"(sender_id.eq.{me['id']},receiver_id.eq.{target_id}),(sender_id.eq.{target_id},receiver_id.eq.{me['id']})")
+        .limit(1).execute()
+    )
+    if existing.data:
+        flash(f"already {existing.data[0]['status']}", "info"); return redirect(url_for("friends_page"))
+
+    supabase.table("friends").insert({
+        "sender_id": me["id"],
+        "receiver_id": target_id,
+        "status": "pending",
+        "created_at": datetime.utcnow().isoformat()
+    }).execute()
+
+    # update friend count for both
+    for uid in (me["id"], target_id):
+        count_friends(uid)
+
+    flash("friend request sent!", "success")
     return redirect(url_for("friends_page"))
 
 @app.route("/friends/respond", methods=["POST"])
 def respond_request():
     # Accept/reject a friend request.
-
     if not current_user():
         return redirect(url_for("auth_page"))
-    request_id = request.form.get("request_id")
+    me = current_user()
+    req_id = request.form.get("request_id")
     action = request.form.get("action")
     status = "accepted" if action == "accept" else "rejected"
-    supabase.table("friends").update({"status": status}).eq("id", request_id).execute()
-    flash(f"Request {status}.", "info")
+
+    # make sure this request belongs to me as receiver
+    check = supabase.table("friends").select("id,receiver_id,sender_id").eq("id", req_id).limit(1).execute()
+    if not check.data or check.data[0]["receiver_id"] != me["id"]:
+        flash("invalid request", "error"); return redirect(url_for("friends_page"))
+
+    supabase.table("friends").update({"status": status}).eq("id", req_id).execute()
+
+    # update counters if accepted
+    if status == "accepted":
+        sender = check.data[0]["sender_id"]
+        for uid in (me["id"], sender):
+            count_friends(uid)
+
+    flash(f"request {status}", "info")
     return redirect(url_for("friends_page"))
 
-# 7. Messaging
-@app.route("/send_message", methods=["POST"])
-def send_message():
-    # Send message to another user.
+# 7. Messaging + message requests (like instagram)
 
-    if not current_user():
-        return redirect(url_for("auth_page"))
-    sender = current_user()
-    receiver_email = request.form.get("receiver")
-    content = request.form.get("message", "").strip()
+def _resolve_peer(peer_id: str | None, peer_username: str | None):
+    if peer_id:
+        r = supabase.table("users").select("id,username").eq("id", peer_id).limit(1).execute()
+        if r.data:
+            return r.data[0]
+    if peer_username:
+        r = supabase.table("users").select("id,username").eq("username", peer_username).limit(1).execute()
+        if r.data:
+            return r.data[0]
+    return None
 
-    if not receiver_email or not content:
-        return jsonify({"error": "Missing fields"}), 400
-
-    receiver = supabase.table("users").select("id").eq("email", receiver_email).execute()
-    if not receiver.data:
-        return jsonify({"error": "Receiver not found"}), 404
-
-    msg = {
-        "sender_id": sender["id"],
-        "receiver_id": receiver.data[0]["id"],
-        "content": content,
-        "created_at": datetime.utcnow().isoformat()
-    }
-    supabase.table("messages").insert(msg).execute()
-    return jsonify({"message": "sent"})
-
-# 8. Profile page
-@app.route("/profile")
-def profile_page():
-    # Show profile page for current user. (change username doesnt work for now)
-    if not current_user():
-        return redirect(url_for("auth_page"))
-    user = current_user()
-    return render_template("profile.html", user=user)
-
-# 9. API & SSE routes for JS frontend
-
-@app.route("/events")
-def events():
-    # Simulate SSE (Server-Sent Events)
-    def stream():
-        import time
-        while True:
-            yield f"data: ping {datetime.utcnow().isoformat()}\n\n"
-            time.sleep(5)
-    return app.response_class(stream(), mimetype="text/event-stream")
-
-@app.route("/api/messages")
+@app.route("/api/messages", methods=["GET"])
 def api_messages():
-    # Return all messages for given peer_id
+    # fetch full convo with peer (by id or username), includes timestamps
     if not current_user():
-        return jsonify({"error": "Unauthorized"}), 403
+        return jsonify({"error":"auth required"}), 401
+    me = current_user()
+    peer_id = (request.args.get("peer_id") or "").strip() or None
+    peer_username = (request.args.get("peer_username") or "").strip() or None
 
-    peer_id = request.args.get("peer_id")
-    user = current_user()
-    resp = (
-        supabase.table("messages")
-        .select("*")
-        .or_(f"sender_id.eq.{user['id']},receiver_id.eq.{user['id']}")
-        .order("created_at")
-        .execute()
+    peer = _resolve_peer(peer_id, peer_username)
+    if not peer:
+        return jsonify({"messages":[],"requests":[]})
+
+    friends_ok = are_friends(me["id"], peer["id"])
+
+    # normal messages shown (only if accepted friends OR request accepted)
+    msgs = []
+    if friends_ok:
+        r = (
+            supabase.table("messages").select("*")
+            .or_(f"(sender_id.eq.{me['id']},receiver_id.eq.{peer['id']}),(sender_id.eq.{peer['id']},receiver_id.eq.{me['id']})")
+            .order("created_at").execute()
+        )
+        msgs = r.data or []
+
+    # message requests (pending)
+    reqs = (
+        supabase.table("message_requests").select("*")
+        .or_(f"(sender_id.eq.{me['id']},receiver_id.eq.{peer['id']}),(sender_id.eq.{peer['id']},receiver_id.eq.{me['id']})")
+        .order("created_at").execute()
     )
-    return jsonify(resp.data or [])
+
+    return jsonify({
+        "peer": {"id": peer["id"], "username": peer["username"]},
+        "friends": friends_ok,
+        "messages": msgs,
+        "requests": reqs.data or []
+    })
 
 @app.route("/api/send_message", methods=["POST"])
 def api_send_message():
-    # JS-based message sending API
+    # Send message or message request depending on friendship status
     if not current_user():
-        return jsonify({"error": "Unauthorized"}), 403
+        return jsonify({"error":"auth required"}), 401
+    me = current_user()
+    data = request.get_json(force=True, silent=True) or {}
+    peer_id = (data.get("peer_id") or "").strip() or None
+    peer_username = (data.get("peer_username") or "").strip() or None
+    content = (data.get("content") or "").strip()
+    if not (peer_id or peer_username) or not content:
+        return jsonify({"error":"missing fields"}), 400
 
-    sender = current_user()
-    data = request.get_json()
-    receiver_email = data.get("receiver")
-    content = data.get("message", "").strip()
+    peer = _resolve_peer(peer_id, peer_username)
+    if not peer:
+        return jsonify({"error":"user not found"}), 404
 
-    receiver = supabase.table("users").select("id").eq("email", receiver_email).execute()
-    if not receiver.data:
-        return jsonify({"error": "Receiver not found"}), 404
+    now_iso = datetime.utcnow().isoformat()
 
+    if are_friends(me["id"], peer["id"]):
+        # drop into messages
+        msg = {
+            "sender_id": me["id"],
+            "receiver_id": peer["id"],
+            "content": content,
+            "created_at": now_iso
+        }
+        supabase.table("messages").insert(msg).execute()
+        # also push to SSE immediately
+        _sse_broadcast({"type":"message", "row": msg})
+        return jsonify({"status":"sent","lane":"inbox","message":msg})
+    else:
+        # create message request
+        req = {
+            "sender_id": me["id"],
+            "receiver_id": peer["id"],
+            "content": content,
+            "created_at": now_iso
+        }
+        supabase.table("message_requests").insert(req).execute()
+        return jsonify({"status":"queued","lane":"requests","request":req})
+
+@app.route("/requests", methods=["GET"])
+def requests_page():
+    # inbox page for message requests (incoming/outgoing)
+    if not current_user():
+        return redirect(url_for("auth_page"))
+    me = current_user()
+
+    incoming = (
+        supabase.table("message_requests").select("*")
+        .eq("receiver_id", me["id"]).order("created_at").execute()
+    )
+    outgoing = (
+        supabase.table("message_requests").select("*")
+        .eq("sender_id", me["id"]).order("created_at").execute()
+    )
+    return render_template("requests.html", user=me, incoming=incoming.data or [], outgoing=outgoing.data or [])
+
+@app.route("/api/requests/respond", methods=["POST"])
+def respond_message_request():
+    # accept/reject a message request; accept moves future chat to messages (friendship updates)
+    if not current_user():
+        return jsonify({"error":"auth required"}), 401
+    me = current_user()
+    data = request.get_json(force=True, silent=True) or {}
+    req_id = data.get("request_id")
+    action = data.get("action")  # "accept" | "reject"
+    if not req_id or action not in ("accept","reject"):
+        return jsonify({"error":"bad input"}), 400
+
+    # load request and validate ownership
+    r = supabase.table("message_requests").select("*").eq("id", req_id).limit(1).execute()
+    if not r.data:
+        return jsonify({"error":"not found"}), 404
+    req = r.data[0]
+    if req["receiver_id"] != me["id"]:
+        return jsonify({"error":"not yours"}), 403
+
+    if action == "reject":
+        supabase.table("message_requests").delete().eq("id", req_id).execute()
+        return jsonify({"status":"rejected"})
+
+    # accept: move this one request into messages and delete it
     msg = {
-        "sender_id": sender["id"],
-        "receiver_id": receiver.data[0]["id"],
-        "content": content,
-        "created_at": datetime.utcnow().isoformat()
+        "sender_id": req["sender_id"],
+        "receiver_id": req["receiver_id"],
+        "content": req["content"],
+        "created_at": req["created_at"]  # keep original timestamp
     }
     supabase.table("messages").insert(msg).execute()
-    return jsonify({"message": "sent"})
+    supabase.table("message_requests").delete().eq("id", req_id).execute()
+    # broadcast to SSE for receiver’s open threads
+    _sse_broadcast({"type":"message", "row": msg})
+    return jsonify({"status":"accepted","moved":msg})
+
+# 8. Profile page (counts + private email)
+
+@app.route("/profile")
+def profile_page():
+    # Show profile page for current user. change username doesnt update live on page, but updates db
+    if not current_user():
+        return redirect(url_for("auth_page"))
+    me = current_user()
+
+    # friends count (accepted only)
+    f = (
+        supabase.table("friends")
+        .select("id", count="exact")
+        .or_(f"sender_id.eq.{me['id']},receiver_id.eq.{me['id']}")
+        .eq("status","accepted").execute()
+    )
+    friends_count = f.count or 0
+
+    # loops count (placeholder: 0 until we add posts table)
+    loops_count = 0
+
+    # fetch latest username (email stays private)
+    u = supabase.table("users").select("username").eq("id", me["id"]).limit(1).execute()
+    username = u.data[0]["username"] if u.data else me["username"]
+
+    user_pub = {"id": me["id"], "username": username}
+    return render_template("profile.html", user=user_pub, friends_count=friends_count, loops_count=loops_count)
+
+# Search users (live search) – endpoint for search bar dropdown
+
+@app.route("/api/search_users_live")
+def search_users_live():
+    if not current_user():
+        return jsonify({"results": []})
+
+    q = request.args.get("q", "").strip().lower()
+    if not q:
+        return jsonify({"results": []})
+
+    try:
+        resp = (
+            supabase.table("users")
+            .select("id, username")
+            .ilike("username", f"%{q}%")
+            .limit(5)
+            .execute()
+        )
+        # exclude self
+        results = [u for u in resp.data if u["id"] != current_user()["id"]]
+        return jsonify({"results": results})
+    except Exception as e:
+        print("Search error:", e)
+        return jsonify({"results": []})
+
+#  Add friend via AJAX (used by search dropdown “Add”)
+
+@app.route("/api/add_friend", methods=["POST"])
+def api_add_friend():
+    if not current_user():
+        return jsonify({"error": "Unauthorized"}), 401
+    sender_id = current_user()["id"]
+    payload = request.get_json(silent=True) or {}
+    receiver_id = (payload.get("receiver_id") or "").strip()
+
+    if not receiver_id:
+        return jsonify({"error": "Missing receiver_id"}), 400
+
+    if sender_id == receiver_id:
+        return jsonify({"error": "Cannot add yourself"}), 400
+
+    # deny duplicates/pending
+    existing = (
+        supabase.table("friends")
+        .select("id,status")
+        .or_(f"(sender_id.eq.{sender_id},receiver_id.eq.{receiver_id}),(sender_id.eq.{receiver_id},receiver_id.eq.{sender_id})")
+        .limit(1).execute()
+    )
+    if existing.data:
+        return jsonify({"error": f"already {existing.data[0]['status']}"}), 400
+
+    try:
+        supabase.table("friends").insert({
+            "sender_id": sender_id,
+            "receiver_id": receiver_id,
+            "status": "pending",
+            "created_at": datetime.utcnow().isoformat()
+        }).execute()
+
+        # Update friend count for both (optimistic)
+        for uid in (sender_id, receiver_id):
+            count_friends(uid)
+
+        return jsonify({"message": "Friend request sent!"})
+    except Exception as e:
+        print("Add friend error:", e)
+        return jsonify({"error": str(e)}), 500
+
+# Friend count helper
+
+def count_friends(user_id):
+    # Recalculate and update friend count for a user.
+    try:
+        resp = (
+            supabase.table("friends")
+            .select("*")
+            .or_(f"(sender_id.eq.{user_id},receiver_id.eq.{user_id})")
+            .eq("status", "accepted").execute()
+        )
+        count = len(resp.data or [])
+        supabase.table("users").update({"friend_count": count}).eq("id", user_id).execute()
+    except Exception as e:
+        print("Count friend update failed:", e)
+
+# 9. Server-Sent Events endpoint (SSE) for chat updates
+
+@app.route("/events")
+def sse_events():
+    # stream new-message events to the browser
+    if not current_user():
+        return Response("unauthorized", status=401)
+
+    q = _sse_subscribe()
+
+    @stream_with_context
+    def gen():
+        try:
+            # initial ping so EventSource opens cleanly
+            yield f"event: ping\ndata: ok\n\n"
+            while True:
+                try:
+                    ev = q.get(timeout=25)
+                    yield f"data: {json.dumps(ev)}\n\n"
+                except queue.Empty:
+                    # keep-alive ping
+                    yield f"event: ping\ndata: ok\n\n"
+        finally:
+            _sse_unsubscribe(q)
+
+    return Response(gen(), mimetype="text/event-stream")
+
+# 10. update username via AJAX
 
 @app.route("/api/update_username", methods=["POST"])
 def api_update_username():
-    # Update user's display name
     if not current_user():
-        return jsonify({"error": "Unauthorized"}), 403
-
-    user = current_user()
-    data = request.get_json()
-    new_username = data.get("username", "").strip()
-
+        return jsonify({"error":"auth required"}), 401
+    me = current_user()
+    data = request.get_json(silent=True) or {}
+    new_username = (data.get("username") or "").strip()
     if not new_username:
-        return jsonify({"error": "Missing username"}), 400
+        return jsonify({"error":"missing"}), 400
 
-    supabase.table("users").update({"username": new_username}).eq("id", user["id"]).execute()
+    # uniqueness check
+    exists = supabase.table("users").select("id").eq("username", new_username).limit(1).execute()
+    if exists.data and exists.data[0]["id"] != me["id"]:
+        return jsonify({"error":"taken"}), 400
+
+    supabase.table("users").update({"username": new_username}).eq("id", me["id"]).execute()
+    # sync session
     session["user"]["username"] = new_username
-    return jsonify({"message": "Username updated"})
+    return jsonify({"ok": True})
+
+# 11. Classic endpoints your templates may call (back-compat)
+
+@app.route("/api/messages_by_peerid", methods=["GET"])
+def api_messages_by_peerid():
+    # we just forward to /api/messages handler by copying args
+    peer_id = request.args.get("peer_id")
+    if peer_id:
+        with app.test_request_context(f"/api/messages?peer_id={peer_id}"):
+            return api_messages()
+    return jsonify({"messages": [], "requests": []})
+
+# Update username (live update)
+
+@app.route("/api/update_username", methods=["POST"])
+def api_update_username_v2(): 
+    if not current_user():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    new_username = (data.get("username") or "").strip()
+    if not new_username:
+        return jsonify({"error": "Username required"}), 400
+
+    me = current_user()
+
+    # Check if taken
+    exists = supabase.table("users").select("id").eq("username", new_username).neq("id", me["id"]).execute()
+    if exists.data:
+        return jsonify({"error": "Username already taken"}), 400
+
+    # Update in Supabase
+    supabase.table("users").update({"username": new_username}).eq("id", me["id"]).execute()
+
+    # Also update in current Flask session immediately (DOESNT WORK)
+    session["user"]["username"] = new_username
+
+    return jsonify({"message": "Username updated successfully", "username": new_username})
+
+
+# 12. App entrypoint
 
 if __name__ == "__main__":
     print("Connected to Supabase successfully")

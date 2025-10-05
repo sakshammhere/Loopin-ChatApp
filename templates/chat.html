@@ -7,93 +7,139 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body class="bg">
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('chat_hub') }}">
-      <span class="brand-badge">L</span><span class="brand-text">Loopin</span>
-    </a>
-    <div class="top-actions">
-      <span class="chip">{{ user.username }}</span>
-      <a class="btn" href="{{ url_for('profile_page') }}">Profile</a>
-      <a class="btn danger" href="{{ url_for('logout') }}">Logout</a>
+<header class="topbar">
+  <a class="brand" href="{{ url_for('chat_hub') }}">
+    <span class="brand-badge">L</span><span class="brand-text">Loopin</span>
+  </a>
+  <div class="search-box">
+    <input id="searchInput" placeholder="🔍 Search users..." autocomplete="off" />
+    <div id="searchResults" class="dropdown"></div>
+  </div>
+  <div class="top-actions">
+    <span class="chip">@{{ user.username }}</span>
+    <a class="btn" href="{{ url_for('profile_page') }}">Profile</a>
+    <a class="btn danger" href="{{ url_for('logout') }}">Logout</a>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="sidebar slim">
+    <a class="btn block" href="{{ url_for('friends_page') }}">Friends</a>
+    <div class="section-title mt">Chat Threads</div>
+    <div id="threadList" class="thread-list"></div>
+  </aside>
+
+  <section class="stage">
+    <div id="noChat" class="empty-state">
+      <div class="bubble-anim">💬</div>
+      <h3>No chats yet</h3>
+      <p>Start by adding a friend above!</p>
     </div>
-  </header>
-
-  <main class="layout">
-    <aside class="sidebar slim">
-      <a class="btn block" href="{{ url_for('chat_hub') }}">← all chats</a>
-      <div class="section-title mt">chatting with</div>
-      <div class="item">
-        <div class="avatar" style="background:hsl(260 70% 50%)">{{ (peer.username or peer.email)[0].upper() }}</div>
-        <div class="col">
-          <div class="name">{{ peer.username or peer.email }}</div>
-          <div class="muted">{{ peer.email }}</div>
-        </div>
-      </div>
-    </aside>
-
-    <section class="stage">
+    <div id="chatContainer" class="hidden">
       <div id="log" class="chat"></div>
-
       <form id="sendForm" class="composer">
-        <input id="msg" placeholder="type a message…" autocomplete="off" />
+        <input id="msg" placeholder="Type a message…" autocomplete="off" />
         <button class="btn" type="submit">Send</button>
       </form>
-    </section>
-  </main>
+    </div>
+  </section>
+</main>
 
-  <script>
-// eslint-disable-next-line
-// @ts-nocheck
-    const me = {{ user|tojson|safe }};
-    const peer = {{ peer|tojson|safe }};
-    const $log = document.getElementById('log');
-    const colorFor = id => `hsl(${[...(id||'x')].reduce((s,c)=>s+c.charCodeAt(0),0)%360} 70% 50%)`;
-    function a(html){ const d=document.createElement('div'); d.innerHTML=html.trim(); return d.firstChild; }
+<script>
+const me = {{ user|tojson|safe }};
+const $log = document.getElementById('log');
+const $chatContainer = document.getElementById('chatContainer');
+const $noChat = document.getElementById('noChat');
+let currentPeer = null;
 
-    function render(m){
-      const mine = m.sender_id === me.id;
-      const node = a(`<div class="row ${mine?'right':''}">
-        ${!mine?`<div class="avatar xs" style="background:${colorFor(m.sender_id)}"></div>`:''}
-        <div class="bubble ${mine?'me':''}">
-          <div>${m.content}</div>
-        </div>
-      </div>`);
-      $log.append(node);
-      $log.scrollTop = $log.scrollHeight;
+function colorFor(id){ return `hsl(${[...(id||'x')].reduce((s,c)=>s+c.charCodeAt(0),0)%360} 70% 50%)`; }
+function a(html){ const d=document.createElement('div'); d.innerHTML=html.trim(); return d.firstChild; }
+
+function renderMessage(m){
+  const mine = m.sender_id === me.id;
+  const node = a(`<div class="row ${mine?'right':''}">
+    ${!mine?`<div class="avatar xs" style="background:${colorFor(m.sender_id)}"></div>`:''}
+    <div class="bubble ${mine?'me':''}">
+      <div>${m.content}</div>
+      <div class="time">${new Date(m.created_at).toLocaleTimeString()}</div>
+    </div>
+  </div>`);
+  $log.append(node);
+  $log.scrollTop = $log.scrollHeight;
+}
+
+async function loadChat(peer){
+  const r = await fetch(`/api/messages?peer_id=${peer.id}`);
+  const data = await r.json();
+  $log.innerHTML = '';
+  if((data.messages||[]).length === 0){
+    $noChat.classList.remove('hidden');
+    $chatContainer.classList.add('hidden');
+    return;
+  }
+  $noChat.classList.add('hidden');
+  $chatContainer.classList.remove('hidden');
+  currentPeer = peer;
+  data.messages.forEach(renderMessage);
+}
+
+document.getElementById('sendForm').onsubmit = async e=>{
+  e.preventDefault();
+  const input = document.getElementById('msg');
+  const text = input.value.trim();
+  if(!text || !currentPeer) return;
+  input.value='';
+  const r = await fetch('/api/send_message',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({peer_id:currentPeer.id,content:text})
+  });
+  const data = await r.json();
+  if(data.message) renderMessage(data.message);
+};
+
+// ------------------
+// SSE Event Stream
+// ------------------
+const ev = new EventSource('/events');
+ev.onmessage = e=>{
+  const m = JSON.parse(e.data);
+  if(m.type==='message'){
+    const x = m.row;
+    if(currentPeer && ((x.sender_id===me.id && x.receiver_id===currentPeer.id) || (x.sender_id===currentPeer.id && x.receiver_id===me.id))){
+      renderMessage(x);
     }
+  }
+};
 
-    async function loadHistory(){
-      const r = await fetch(`/api/messages?peer_id=${peer.id}`);
-      const data = await r.json();
-      $log.innerHTML = '';
-      (data.messages||[]).forEach(render);
-    }
-
-    document.getElementById('sendForm').onsubmit = async (e)=>{
-      e.preventDefault();
-      const input = document.getElementById('msg');
-      const text = input.value.trim(); if(!text) return;
-      input.value='';
-      const r = await fetch('/api/send_message',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({peer_id:peer.id,content:text})});
-      const data = await r.json();
-      if(data.message) render(data.message); // optimistic fallback
+// ------------------
+// Live Search
+// ------------------
+const searchInput = document.getElementById('searchInput');
+const searchResults = document.getElementById('searchResults');
+searchInput.addEventListener('input', async ()=>{
+  const q = searchInput.value.trim();
+  if(!q){ searchResults.innerHTML=''; return; }
+  const r = await fetch(`/api/search_users_live?q=${encodeURIComponent(q)}`);
+  const data = await r.json();
+  searchResults.innerHTML = '';
+  (data.results||[]).forEach(u=>{
+    const item = a(`<div class="dropdown-item">
+      <span>@${u.username}</span>
+      <button class="mini" data-id="${u.id}">Add</button>
+    </div>`);
+    item.querySelector('button').onclick = async()=>{
+      const res = await fetch('/api/add_friend',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({receiver_id:u.id})
+      });
+      const out = await res.json();
+      alert(out.message || out.error || 'Done');
     };
-
-    // sse: hear about new messages from python (not from supabase directly)
-    const ev = new EventSource('/events');
-    ev.onmessage = (e)=>{
-      const m = JSON.parse(e.data);
-      if(m.type==='message'){
-        const x = m.row;
-        // only show if it belongs to this thread
-        if((x.sender_id===me.id && x.receiver_id===peer.id) || (x.sender_id===peer.id && x.receiver_id===me.id)){
-          render(x);
-        }
-      }
-    };
-    ev.addEventListener('ping',()=>{});
-
-    loadHistory();
-  </script>
+    searchResults.append(item);
+  });
+});
+</script>
 </body>
 </html>

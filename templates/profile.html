@@ -7,41 +7,63 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body class="bg">
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('chat_hub') }}">
-      <span class="brand-badge">L</span><span class="brand-text">Loopin</span>
-    </a>
-    <div class="top-actions">
-      <a class="btn" href="{{ url_for('chat_hub') }}">Back</a>
-      <a class="btn danger" href="{{ url_for('logout') }}">Logout</a>
-    </div>
-  </header>
+<header class="topbar">
+  <a class="brand" href="{{ url_for('chat_hub') }}">
+    <span class="brand-badge">L</span><span class="brand-text">Loopin</span>
+  </a>
+  <div class="top-actions">
+    <a class="btn" href="{{ url_for('friends_page') }}">Friends</a>
+    <a class="btn danger" href="{{ url_for('logout') }}">Logout</a>
+  </div>
+</header>
 
-  <main class="center stage">
-    <div class="card">
-      <div class="row gap">
-        <div class="avatar xl" style="background:hsl(270 70% 50%)">{{ user.username[0]|upper }}</div>
-        <div>
-          <h2 class="mb0">{{ user.username }}</h2>
-          <div class="muted">{{ user.email }}</div>
+<main class="center stage">
+  <div class="card">
+    <div class="row gap">
+      <div class="avatar xl" style="background:hsl(270 70% 50%)">{{ user.username[0]|upper }}</div>
+      <div>
+        <h2 class="mb0">@{{ user.username }}</h2>
+        <div class="row gap mt">
+          <div class="chip">Friends: {{ friends_count }}</div>
+          <div class="chip">Loops: {{ loops_count }}</div>
         </div>
       </div>
-
-      <div class="section-title mt">edit username</div>
-      <div class="row">
-        <input id="username" value="{{ user.username }}" />
-        <button class="btn" id="save">Save</button>
-      </div>
     </div>
-  </main>
+    <p class="muted mt">Email is private.</p>
 
-  <script>
-    document.getElementById('save').onclick = async ()=>{
-      const username = document.getElementById('username').value.trim();
-      if(!username) return;
-      const r = await fetch('/api/update_username',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username})});
-      if(r.ok){ alert('updated'); location.reload(); }
-    };
-  </script>
+    <div class="section-title mt">Change Username</div>
+    <div class="row">
+      <input id="username" value="{{ user.username }}" />
+      <button class="btn" id="save">Save</button>
+    </div>
+  </div>
+</main>
+
+<script>
+  const saveBtn = document.getElementById('save');
+  const usernameInput = document.getElementById('username');
+  const usernameDisplay = document.querySelector('h2.mb0'); // your <h2 class="mb0">@username</h2>
+
+  saveBtn.onclick = async () => {
+    const username = usernameInput.value.trim();
+    if (!username) return alert('Enter a valid username');
+
+    const r = await fetch('/api/update_username', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ username })
+    });
+
+    const data = await r.json();
+    if (r.ok) {
+      // ✅ Update instantly without reload
+      usernameDisplay.textContent = '@' + data.username;
+      alert('Username updated!');
+    } else {
+      alert(data.error || 'Update failed');
+    }
+  };
+</script>
+
 </body>
 </html>

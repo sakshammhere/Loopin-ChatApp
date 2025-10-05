@@ -1,310 +1,43 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>loopin — sign up / login</title>
-
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Rubik:wght@500;700&display=swap" rel="stylesheet">
-
-  <style>
-    :root {
-      --bg: linear-gradient(to right, #f0f7ff 0%, #c3d9ff 40%, #6b8cff 100%);
-      --card: #ffe6f0;
-      --accent-1: #ff7aa2;
-      --accent-2: #ffb347;
-      --accent-grad: linear-gradient(135deg, var(--accent-1), var(--accent-2));
-      --text: #000000;
-      --muted: #333333;
-      --success:#2f855a;
-      --danger:#c53030;
-    }
-
-    *{box-sizing:border-box}
-    body {
-      margin:0;
-      font-family:Inter, sans-serif;
-      background: var(--bg);
-      min-height:100vh;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:20px;
-      color:var(--text);
-    }
-
-    .wrap {
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      max-width:1000px;
-      width:100%;
-      border-radius:20px;
-      overflow:hidden;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-      background:var(--card);
-    }
-
-    .left {
-      padding:40px;
-      display:flex;
-      flex-direction:column;
-      justify-content:center;
-      gap:20px;
-      background:var(--accent-grad);
-      color:#000;
-    }
-
-    .brand {display:flex;align-items:center;gap:12px;}
-    .logo-wrap {width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#fff;}
-    .brand h1 {margin:0;font-family:Rubik,sans-serif;font-size:22px;}
-    .brand p {margin:0;font-size:14px;}
-
-    .headline {font-size:26px;font-weight:700;line-height:1.3;}
-    .desc {font-size:15px;max-width:300px;}
-
-    .right {padding:40px;display:flex;align-items:center;justify-content:center;}
-    .panel {width:100%;max-width:420px;}
-
-    .tabs {display:flex;gap:10px;margin-bottom:20px;background:#fce4ec;padding:6px;border-radius:12px;}
-    .tab {flex:1;padding:10px;text-align:center;border-radius:8px;font-weight:600;cursor:pointer;color:#000;}
-    .tab.active {background:var(--accent-grad);color:#fff;}
-
-    form {display:grid;gap:12px}
-    label{font-size:14px;font-weight:600}
-    .input-wrap{position:relative;}
-    input {
-      width:100%;
-      padding:12px;
-      border:1px solid #ccc;
-      border-radius:10px;
-      font-size:15px;
-    }
-    input:focus{outline:none;border-color:var(--accent-1);box-shadow:0 0 0 2px rgba(255,122,162,0.15)}
-
-    .toggle-eye {
-      position:absolute;
-      right:12px;
-      top:50%;
-      transform:translateY(-50%);
-      cursor:pointer;
-      font-size:14px;
-      color:#555;
-      user-select:none;
-    }
-
-    .btn {padding:12px;border:none;border-radius:10px;font-weight:600;cursor:pointer;font-size:15px;}
-    .btn.primary{background:var(--accent-grad);color:#fff;}
-
-    .alert{font-size:14px;padding:10px;border-radius:8px;margin-bottom:10px;}
-    .alert.error{background:#fed7d7;color:#c53030}
-    .alert.success{background:#c6f6d5;color:#2f855a}
-
-    /* strength bar styles */
-    .strength-row {display:flex;align-items:center;gap:12px}
-    .strength-bar {flex:1;height:8px;border-radius:6px;background:#e6e6e6;overflow:hidden;}
-    .strength-bar > div {height:100%;width:0;transition:width .25s ease,background .25s ease;border-radius:6px}
-    .strength-label {font-size:13px;color:var(--muted);width:80px;text-align:right}
-
-    @media(max-width:800px){
-      .wrap{grid-template-columns:1fr}
-      .left{display:none}
-    }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loopin | Login / Sign Up</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
 </head>
 <body>
-  <div class="wrap">
-    <!-- left -->
-    <aside class="left">
-      <div class="brand">
-        <div class="logo-wrap" aria-hidden="true">
-          <svg viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><circle cx="18" cy="18" r="16" fill="#9AE6B4"/><path d="M12 14h12v5a5 5 0 01-5 5h-2l-3 3v-3h-2a5 5 0 01-5-5v-5z" fill="black"/></svg>
-        </div>
-        <div><h1>loopin</h1><p>drop in • say hi • stay looped</p></div>
+  <div class="auth-wrapper">
+    <div class="auth-box">
+
+      <!-- Animated Logo -->
+      <h1 class="logo-text">Loopin</h1>
+
+      <div class="form-toggle">
+        <button id="loginBtn" class="active">Login</button>
+        <button id="signupBtn">Sign Up</button>
       </div>
 
-      <div class="headline">casual chats, simple vibes 🌸</div>
-      <div class="desc">Create a profile, hop in with friends, and keep conversations light & fun.</div>
-    </aside>
+      <!-- LOGIN FORM -->
+      <form id="loginForm" action="/login" method="POST">
+        <h2>Welcome Back 👋</h2>
+        <input type="email" name="email" placeholder="Email" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+      </form>
 
-    <!-- right -->
-    <section class="right">
-      <div class="panel">
-        <div class="tabs" role="tablist" aria-label="auth tabs">
-          <div id="tab-sign" class="tab active" role="tab" tabindex="0" aria-selected="true">Sign up</div>
-          <div id="tab-login" class="tab" role="tab" tabindex="0" aria-selected="false">Login</div>
-        </div>
+      <!-- SIGNUP FORM -->
+      <form id="signupForm" action="/signup" method="POST" class="hidden">
+        <h2>Create Account ✨</h2>
+        <input type="text" name="username" placeholder="Username" required>
+        <input type="email" name="email" placeholder="Email" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Sign Up</button>
+      </form>
 
-        <div id="serverMessageArea" aria-live="polite"></div>
-
-        <!-- signup -->
-        <form id="formSign" action="/auth/signup" method="post" novalidate>
-          <label for="s_username">Display name</label>
-          <input id="s_username" name="username" type="text" placeholder="Your name here" required>
-
-          <label for="s_email">Email</label>
-          <input id="s_email" name="email" type="email" placeholder="you@example.com" required>
-
-          <label for="s_password">Password</label>
-          <div class="input-wrap">
-            <input id="s_password" name="password" type="password" placeholder="At least 8 chars, 1 uppercase, 1 number, 1 special char" required aria-describedby="pwStrengthLabel">
-            <span class="toggle-eye" onclick="togglePw('s_password')" title="show / hide">👁</span>
-          </div>
-
-          <!-- strength bar + label -->
-          <div class="strength-row" aria-hidden="false">
-            <div class="strength-bar" aria-hidden="true"><div id="strengthFill"></div></div>
-            <div id="pwStrengthLabel" class="strength-label">too weak</div>
-          </div>
-
-          <label for="s_confirm">Confirm password</label>
-          <div class="input-wrap">
-            <input id="s_confirm" name="confirm_password" type="password" placeholder="Re-type password" required>
-            <span class="toggle-eye" onclick="togglePw('s_confirm')" title="show / hide">👁</span>
-          </div>
-
-          <button class="btn primary" type="submit">Create account</button>
-        </form>
-
-        <!-- login -->
-        <form id="formLogin" action="/auth/login" method="post" style="display:none" novalidate>
-          <label for="l_email">Email</label>
-          <input id="l_email" name="email" type="email" required>
-
-          <label for="l_password">Password</label>
-          <div class="input-wrap">
-            <input id="l_password" name="password" type="password" required>
-            <span class="toggle-eye" onclick="togglePw('l_password')" title="show / hide">👁</span>
-          </div>
-
-          <button class="btn primary" type="submit">Login</button>
-        </form>
-      </div>
-    </section>
+    </div>
   </div>
 
-<script>
-  const tabSign = document.getElementById('tab-sign');
-  const tabLogin = document.getElementById('tab-login');
-  const formSign = document.getElementById('formSign');
-  const formLogin = document.getElementById('formLogin');
-  const serverMessageArea = document.getElementById('serverMessageArea');
-
-  function showTab(tab){
-    if(tab === 'sign'){
-      tabSign.classList.add('active');
-      tabLogin.classList.remove('active');
-      formSign.style.display = '';
-      formLogin.style.display = 'none';
-      tabSign.setAttribute('aria-selected','true');
-      tabLogin.setAttribute('aria-selected','false');
-    } else {
-      tabSign.classList.remove('active');
-      tabLogin.classList.add('active');
-      formSign.style.display = 'none';
-      formLogin.style.display = '';
-      tabSign.setAttribute('aria-selected','false');
-      tabLogin.setAttribute('aria-selected','true');
-    }
-    serverMessageArea.innerHTML = '';
-  }
-  tabSign.onclick = () => showTab('sign');
-  tabLogin.onclick = () => showTab('login');
-
-  function showMessage(msg,type){
-    serverMessageArea.innerHTML = `<div class="alert ${type === 'error' ? 'error' : 'success'}">${msg}</div>`;
-    serverMessageArea.scrollIntoView({behavior:'smooth', block:'center'});
-  }
-
-  async function ajaxSubmit(form,endpoint){
-    const data = new FormData(form);
-    const body = new URLSearchParams();
-    for (const [k,v] of data.entries()) body.append(k, v);
-    try {
-      const resp = await fetch(endpoint, { method: "POST", body });
-      if (resp.redirected) { window.location = resp.url; return; }
-      const text = await resp.text();
-      showMessage(text || "Unexpected response", "error");
-    } catch (err) {
-      showMessage("Network error: " + err.message, "error");
-    }
-  }
-
-  // form handlers
-  formSign.addEventListener('submit', (e) => {
-    e.preventDefault();
-    serverMessageArea.innerHTML = '';
-
-    const username = document.getElementById('s_username').value.trim();
-    const email = document.getElementById('s_email').value.trim();
-    const pw = document.getElementById('s_password').value;
-    const confirm = document.getElementById('s_confirm').value;
-
-    if (!username) { showMessage('please enter a display name', 'error'); return; }
-    if (!isValidEmail(email)) { showMessage('please enter a valid email', 'error'); return; }
-    if (!isStrongPassword(pw)) { showMessage('password must be 8+ chars, include uppercase, number, and special char', 'error'); return; }
-    if (pw !== confirm) { showMessage('passwords do not match', 'error'); return; }
-
-    ajaxSubmit(formSign, '/auth/signup');
-  });
-
-  formLogin.addEventListener('submit', (e) => {
-    e.preventDefault();
-    serverMessageArea.innerHTML = '';
-    const email = document.getElementById('l_email').value.trim();
-    const pw = document.getElementById('l_password').value;
-    if (!isValidEmail(email)) { showMessage('please enter a valid email', 'error'); return; }
-    if (!pw) { showMessage('please enter your password', 'error'); return; }
-    ajaxSubmit(formLogin, '/auth/login');
-  });
-
-  // email & password helpers
-  function isValidEmail(email) {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
-  }
-  function isStrongPassword(pw) {
-    const re = /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/;
-    return re.test(pw);
-  }
-
-  // password strength bar logic (still works without hints)
-  const pwInput = document.getElementById('s_password');
-  const fill = document.getElementById('strengthFill');
-  const label = document.getElementById('pwStrengthLabel');
-
-  pwInput.addEventListener('input', () => {
-    const v = pwInput.value;
-    let score = 0;
-    if (v.length >= 8) score++;
-    if (/[A-Z]/.test(v)) score++;
-    if (/\d/.test(v)) score++;
-    if (/[@$!%*?&]/.test(v)) score++;
-
-    // update bar
-    const pct = (score / 4) * 100;
-    fill.style.width = pct + '%';
-    if (score <= 1) {
-      fill.style.background = '#e53e3e'; label.textContent = 'too weak';
-    } else if (score === 2 || score === 3) {
-      fill.style.background = '#dd6b20'; label.textContent = 'okay';
-    } else {
-      fill.style.background = '#38a169'; label.textContent = 'strong';
-    }
-  });
-
-  // eye toggle
-  function togglePw(id){
-    const el = document.getElementById(id);
-    el.type = (el.type === 'password') ? 'text' : 'password';
-  }
-
-  // show server messages on load if present in query
-  (function showServerQueryMessages(){
-    const qp = new URLSearchParams(window.location.search);
-    if (qp.has('error')) showMessage(decodeURIComponent(qp.get('error')), 'error');
-    if (qp.has('info')) showMessage(decodeURIComponent(qp.get('info')), 'success');
-    if (qp.has('mode') && qp.get('mode') === 'login') showTab('login');
-  })();
-</script>
+  <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 </body>
 </html>

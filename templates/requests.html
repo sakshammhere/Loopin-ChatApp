@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Loopin • Message Requests</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body class="bg">
+<header class="topbar">
+  <a class="brand" href="{{ url_for('chat_hub') }}">
+    <span class="brand-badge">L</span><span class="brand-text">Loopin</span>
+  </a>
+  <div class="top-actions">
+    <a class="btn" href="{{ url_for('friends_page') }}">Friends</a>
+    <a class="btn" href="{{ url_for('profile_page') }}">Profile</a>
+    <a class="btn danger" href="{{ url_for('logout') }}">Logout</a>
+  </div>
+</header>
+
+<main class="center stage">
+  <div class="card wide">
+    <h2>Message Requests 📬</h2>
+
+    <!-- Incoming Requests -->
+    <h3 class="mt">Incoming</h3>
+    {% if incoming %}
+      <ul class="list">
+        {% for r in incoming %}
+          <li class="row space">
+            <div>
+              <strong>From:</strong> @{{ r.sender_id }}  
+              <div class="muted">{{ r.content }}</div>
+              <div class="muted small">{{ r.created_at }}</div>
+            </div>
+            <div class="actions">
+              <button class="mini" onclick="respond('{{ r.id }}','accept')">Accept</button>
+              <button class="mini danger" onclick="respond('{{ r.id }}','reject')">Reject</button>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No new incoming requests.</p>
+    {% endif %}
+
+    <!-- Outgoing Requests -->
+    <h3 class="mt">Outgoing</h3>
+    {% if outgoing %}
+      <ul class="list">
+        {% for r in outgoing %}
+          <li class="row space">
+            <div>
+              <strong>To:</strong> @{{ r.receiver_id }}
+              <div class="muted">{{ r.content }}</div>
+              <div class="muted small">{{ r.created_at }}</div>
+            </div>
+            <div class="chip muted">Pending</div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No outgoing requests.</p>
+    {% endif %}
+  </div>
+</main>
+
+<script>
+async function respond(id, action){
+  const res = await fetch('/api/requests/respond',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({request_id:id,action})
+  });
+  const data = await res.json();
+  if(data.status){
+    alert(`Request ${data.status}`);
+    location.reload();
+  }else{
+    alert(data.error || 'Error');
+  }
+}
+</script>
+</body>
+</html>
