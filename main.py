@@ -13,6 +13,7 @@ from realtime import Socket
 load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")  # ✅ Added anon key for realtime
 SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "dev-secret")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
@@ -44,25 +45,44 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-# 4. Realtime connection setup : Failed for now
+# 4. Realtime connection setup : Fixed version (uses anon key)
 def start_realtime_thread():
-    # Start realtime listener for message table
+    """Start realtime listener for 'messages' table using anon key (Supabase v2 Realtime)."""
     try:
-        socket = Socket(
-            f"{SUPABASE_URL.replace('https', 'wss')}/realtime/v1",
-            params={"apikey": SUPABASE_SERVICE_ROLE_KEY, "vsn": "1.0.0"}
-        )
-        socket.connect()
-        channel = socket.set_channel("realtime:public:messages")
+        # Realtime v2 requires anon key and correct websocket endpoint
+        websocket_url = f"wss://{SUPABASE_URL.split('//')[1]}/realtime/v1/websocket"
 
-        def handle_insert(payload):
-            print(f"New realtime message: {payload.get('new')}")
+        from websocket import create_connection
+        import json, threading
 
-        channel.join().on("INSERT", handle_insert)
-        threading.Thread(target=socket.run_forever, daemon=True).start()
-        print("Realtime thread started successfully")
+        def listen_realtime():
+            try:
+                ws = create_connection(f"{websocket_url}?apikey={os.getenv('SUPABASE_ANON_KEY')}&vsn=1.0.0")
+                print("✅ Connected to Supabase Realtime")
+
+                # Subscribe to the public:messages channel
+                payload = {
+                    "topic": "realtime:public:messages",
+                    "event": "phx_join",
+                    "payload": {},
+                    "ref": 1
+                }
+                ws.send(json.dumps(payload))
+                print("📡 Listening for message inserts...")
+
+                while True:
+                    data = ws.recv()
+                    if '"INSERT"' in data:
+                        print(f"📩 New message received: {data}")
+            except Exception as e:
+                print(f"⚠️ Realtime listener crashed: {e}")
+
+        threading.Thread(target=listen_realtime, daemon=True).start()
     except Exception as e:
-        print(f"Realtime connection failed: {e}")
+        print(f"⚠️ Failed to start realtime thread: {e}")
+
+
+
 
 # 5. Authentication routes
 @app.route("/")
@@ -248,6 +268,76 @@ def profile_page():
         return redirect(url_for("auth_page"))
     user = current_user()
     return render_template("profile.html", user=user)
+
+# 9. API & SSE routes for JS frontend
+
+@app.route("/events")
+def events():
+    # Simulate SSE (Server-Sent Events)
+    def stream():
+        import time
+        while True:
+            yield f"data: ping {datetime.utcnow().isoformat()}\n\n"
+            time.sleep(5)
+    return app.response_class(stream(), mimetype="text/event-stream")
+
+@app.route("/api/messages")
+def api_messages():
+    # Return all messages for given peer_id
+    if not current_user():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    peer_id = request.args.get("peer_id")
+    user = current_user()
+    resp = (
+        supabase.table("messages")
+        .select("*")
+        .or_(f"sender_id.eq.{user['id']},receiver_id.eq.{user['id']}")
+        .order("created_at")
+        .execute()
+    )
+    return jsonify(resp.data or [])
+
+@app.route("/api/send_message", methods=["POST"])
+def api_send_message():
+    # JS-based message sending API
+    if not current_user():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    sender = current_user()
+    data = request.get_json()
+    receiver_email = data.get("receiver")
+    content = data.get("message", "").strip()
+
+    receiver = supabase.table("users").select("id").eq("email", receiver_email).execute()
+    if not receiver.data:
+        return jsonify({"error": "Receiver not found"}), 404
+
+    msg = {
+        "sender_id": sender["id"],
+        "receiver_id": receiver.data[0]["id"],
+        "content": content,
+        "created_at": datetime.utcnow().isoformat()
+    }
+    supabase.table("messages").insert(msg).execute()
+    return jsonify({"message": "sent"})
+
+@app.route("/api/update_username", methods=["POST"])
+def api_update_username():
+    # Update user's display name
+    if not current_user():
+        return jsonify({"error": "Unauthorized"}), 403
+
+    user = current_user()
+    data = request.get_json()
+    new_username = data.get("username", "").strip()
+
+    if not new_username:
+        return jsonify({"error": "Missing username"}), 400
+
+    supabase.table("users").update({"username": new_username}).eq("id", user["id"]).execute()
+    session["user"]["username"] = new_username
+    return jsonify({"message": "Username updated"})
 
 if __name__ == "__main__":
     print("Connected to Supabase successfully")
