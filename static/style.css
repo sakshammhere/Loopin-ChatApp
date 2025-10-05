@@ -1,0 +1,72 @@
+/* style.css — modern discord/ig mix
+   small rules, readable names, no frameworks, smooth vibes */
+
+:root{
+  --bg:#0f0b1b;
+  --panel:#17132a;
+  --panel-2:#1e1840;
+  --text:#f4f2ff;
+  --muted:#bdb6d6;
+  --accent:#7c4dff;
+  --accent-2:#9e86ff;
+  --stroke:rgba(255,255,255,.08);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:linear-gradient(120deg,var(--bg),#0b0816);color:var(--text)}
+a{text-decoration:none;color:inherit}
+
+/* top bar */
+.topbar{
+  height:60px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 16px;background:var(--panel);border-bottom:1px solid var(--stroke)
+}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-badge{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;font-weight:800}
+.brand-text{font-weight:900;letter-spacing:.5px;background:linear-gradient(90deg,var(--accent-2),#fff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.top-actions{display:flex;align-items:center;gap:10px}
+.chip{background:rgba(255,255,255,.07);padding:6px 10px;border-radius:999px;font-size:12px}
+
+/* layout */
+.layout{display:grid;grid-template-columns:300px 1fr;height:calc(100vh - 60px)}
+.sidebar{background:var(--panel);border-right:1px solid var(--stroke);padding:12px;overflow:auto}
+.sidebar.slim{width:260px}
+.stage{background:linear-gradient(180deg,var(--bg),#0f0a1d);display:flex;flex-direction:column}
+.center{display:grid;place-items:center}
+.mt{margin-top:16px}
+.mb0{margin-bottom:0}
+
+/* lists */
+.section-title{font-size:12px;color:var(--muted);margin:4px 0 8px}
+.list{display:flex;flex-direction:column;gap:6px}
+.item{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;background:transparent;border:1px solid transparent}
+.item:hover{background:rgba(255,255,255,.04);border-color:var(--stroke)}
+.name{font-weight:700}
+.muted{color:var(--muted);font-size:12px}
+
+/* controls */
+.btn{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer;display:inline-block}
+.btn.block{display:block;text-align:center}
+.btn.xs{padding:4px 8px;font-size:12px}
+.btn.danger{background:#ff4d80}
+.row{display:flex;align-items:center;gap:8px}
+.col{display:flex;flex-direction:column}
+input{flex:1;background:var(--panel-2);color:#fff;border:1px solid var(--stroke);border-radius:10px;padding:8px;outline:none}
+
+/* avatars / empties */
+.avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:900}
+.avatar.xs{width:28px;height:28px}
+.avatar.xl{width:64px;height:64px;border-radius:20px}
+.empty{text-align:center;color:var(--muted)}
+.ghost{font-size:64px;opacity:.9;margin-bottom:6px}
+
+/* chat */
+.chat{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:8px}
+.composer{border-top:1px solid var(--stroke);padding:12px;background:var(--panel)}
+.bubble{background:#231b3c;border:1px solid var(--stroke);padding:10px 12px;border-radius:14px;max-width:65%}
+.bubble.me{background:var(--accent);border-color:transparent}
+.row.right{justify-content:flex-end}
+
+/* cards */
+.card{background:var(--panel);border:1px solid var(--stroke);padding:16px;border-radius:16px;min-width:320px}
