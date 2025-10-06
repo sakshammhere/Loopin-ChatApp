@@ -1,0 +1,163 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
+
+body {
+  margin: 0;
+  height: 100vh;
+  background: radial-gradient(ellipse at center, #050505 0%, #000000 100%);
+  font-family: 'Poppins', sans-serif;
+  color: #fff;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+/* ✨ Dynamic glow layer */
+.light-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 50%, rgba(180,255,220,0.35), rgba(120,140,255,0.15), transparent 70%);
+  filter: blur(60px);
+  transition: background 0.1s linear;
+  z-index: 0;
+}
+
+/* Navbar */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 25px 70px;
+  position: relative;
+  z-index: 10;
+}
+
+/* Logo with soft pulse glow */
+.logo a {
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1.9rem;
+  background: linear-gradient(90deg, #6bffb0, #6f73ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: logoPulse 3s ease-in-out infinite;
+}
+
+@keyframes logoPulse {
+  0%, 100% {
+    text-shadow: 0 0 10px rgba(130, 255, 200, 0.4),
+                 0 0 20px rgba(120, 140, 255, 0.2);
+  }
+  50% {
+    text-shadow: 0 0 20px rgba(130, 255, 200, 0.8),
+                 0 0 35px rgba(120, 140, 255, 0.5);
+  }
+}
+
+.nav-links a {
+  margin-left: 25px;
+  text-decoration: none;
+  color: #fff;
+  font-weight: 500;
+  transition: color 0.3s ease;
+}
+
+.nav-links a:hover {
+  color: #70ffa8;
+}
+
+/* Hero Section */
+.hero {
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  position: relative;
+  z-index: 5;
+}
+
+.hero h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1.3;
+  max-width: 800px;
+  background: linear-gradient(90deg, #a2ffc8, #8aa6ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 18px rgba(130, 200, 255, 0.3));
+}
+
+.hero h1 span {
+  display: block;
+  font-size: 3.2rem;
+  background: linear-gradient(90deg, #6effa2, #7277ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.buttons {
+  margin-top: 40px;
+  display: flex;
+  gap: 20px;
+}
+
+.btn {
+  padding: 14px 35px;
+  border-radius: 30px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 15px rgba(0,0,0,0.4);
+}
+
+.btn.primary {
+  background: linear-gradient(90deg, #6b6bff, #70ffa8);
+  color: #fff;
+}
+
+.btn.secondary {
+  border: 1px solid rgba(255,255,255,0.3);
+  color: #ddd;
+  background: rgba(255,255,255,0.07);
+}
+
+.btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 0 22px rgba(100,255,200,0.35);
+}
+
+/* About Section */
+.about {
+  background: rgba(255,255,255,0.03);
+  padding: 120px 15%;
+  text-align: center;
+  backdrop-filter: blur(15px);
+}
+
+.about h2 {
+  font-size: 2.4rem;
+  background: linear-gradient(90deg, #70ffa8, #6b6bff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 25px;
+}
+
+.about p {
+  font-size: 1.15rem;
+  color: #ccc;
+  line-height: 1.8;
+  max-width: 850px;
+  margin: 15px auto;
+}
+
+/* Footer */
+footer {
+  text-align: center;
+  padding: 25px 0;
+  color: #888;
+  background: rgba(0,0,0,0.3);
+}

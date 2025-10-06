@@ -2,114 +2,67 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Loopin • Chats</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loopin | Connect & Chat Effortlessly</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
 </head>
-<body class="bg">
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('chat_hub') }}">
-      <span class="brand-badge">L</span><span class="brand-text">Loopin</span>
-    </a>
-    <div class="top-actions">
-      <span class="chip">logged in as {{ user.username }}</span>
-      <a class="btn" href="{{ url_for('profile_page') }}">Profile</a>
-      <a class="btn danger" href="{{ url_for('logout') }}">Logout</a>
+<body>
+  <!-- Dynamic background light -->
+  <div class="light-overlay" id="light"></div>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="logo"><a href="{{ url_for('landing_page') }}">Loopin</a></div>
+    <div class="nav-links">
+      <a href="{{ url_for('auth_page') }}">Login</a>
+      <a href="#about">About</a>
     </div>
-  </header>
+  </nav>
 
-  <main class="layout">
-    <aside class="sidebar">
-      <div class="section-title">friends</div>
-      <div id="friends" class="list"></div>
+  <!-- Hero Section -->
+  <section class="hero">
+    <h1>Let your <span>connections shine brighter</span> with Loopin</h1>
+    <div class="buttons">
+      <a href="{{ url_for('auth_page') }}" class="btn primary">Get Started</a>
+      <a href="#about" class="btn secondary">Learn More</a>
+    </div>
+  </section>
 
-      <div class="section-title mt">requests</div>
-      <div id="incoming" class="list"></div>
-      <div id="outgoing" class="list"></div>
+  <!-- About Section -->
+  <section class="about" id="about">
+    <div class="content">
+      <h2>About Loopin</h2>
+      <p>
+        Loopin is where real connections happen — a space that makes chatting feel natural, expressive, and fun.
+      </p>
+      <p>
+        Designed with simplicity and beauty at its heart, Loopin combines modern UI, seamless performance, and privacy-first design so that your conversations always stay personal and meaningful.
+      </p>
+    </div>
+  </section>
 
-      <div class="section-title mt">add friend</div>
-      <div class="row">
-        <input id="addEmail" placeholder="email..." />
-        <button class="btn" id="sendReq">Add</button>
-      </div>
-    </aside>
-
-    <section class="stage center">
-      <div class="empty">
-        <div class="ghost">💬</div>
-        <h2>drop in • say hi • stay looped</h2>
-        <p class="muted">pick a friend on the left to start chatting.</p>
-      </div>
-    </section>
-  </main>
+  <!-- Footer -->
+  <footer>
+    <p>© {{ datetime.utcnow().year }} Loopin — Made with 💙 for connection</p>
+  </footer>
 
   <script>
-    const $friends = document.getElementById('friends');
-    const $incoming = document.getElementById('incoming');
-    const $outgoing = document.getElementById('outgoing');
+    // ✨ Smooth mouse-tracking light effect
+    const light = document.getElementById("light");
+    let x = 50, y = 50, targetX = 50, targetY = 50;
 
-    function a(html){ const d=document.createElement('div'); d.innerHTML=html.trim(); return d.firstChild; }
-    const colorFor = id => `hsl(${[...(id||'x')].reduce((s,c)=>s+c.charCodeAt(0),0)%360} 70% 50%)`;
+    document.addEventListener("mousemove", (e) => {
+      targetX = (e.clientX / window.innerWidth) * 100;
+      targetY = (e.clientY / window.innerHeight) * 100;
+    });
 
-    async function refresh(){
-      const r = await fetch('/api/friends'); const data = await r.json();
-      // friends
-      $friends.innerHTML = '';
-      (data.friends||[]).forEach(u=>{
-        const n=a(`<a class="item" href="/chat/${u.id}">
-          <div class="avatar" style="background:${colorFor(u.id)}">${(u.username||u.email||'?')[0].toUpperCase()}</div>
-          <div class="col"><div class="name">${u.username||u.email}</div></div>
-        </a>`);
-        $friends.append(n);
-      });
-
-      // incoming
-      $incoming.innerHTML = '';
-      (data.incoming||[]).forEach(req=>{
-        const u=req.user||{};
-        const row=a(`<div class="item">
-          <div class="avatar" style="background:${colorFor(u.id||'x')}">${(u.username||u.email||'?')[0].toUpperCase()}</div>
-          <div class="col"><div class="name">${u.username||u.email}</div></div>
-          <div class="row gap">
-            <button class="btn xs accept">Accept</button>
-            <button class="btn xs danger reject">Reject</button>
-          </div>
-        </div>`);
-        row.querySelector('.accept').onclick=()=>act('/api/friends/accept',{request_id:req.id});
-        row.querySelector('.reject').onclick=()=>act('/api/friends/reject',{request_id:req.id});
-        $incoming.append(row);
-      });
-
-      // outgoing
-      $outgoing.innerHTML = '';
-      (data.outgoing||[]).forEach(req=>{
-        const u=req.user||{};
-        const row=a(`<div class="item">
-          <div class="avatar" style="background:${colorFor(u.id||'x')}">${(u.username||u.email||'?')[0].toUpperCase()}</div>
-          <div class="col"><div class="name">${u.username||u.email}</div><div class="muted">pending…</div></div>
-        </div>`);
-        $outgoing.append(row);
-      });
+    function animate() {
+      x += (targetX - x) * 0.1;
+      y += (targetY - y) * 0.1;
+      light.style.background = `radial-gradient(circle at ${x}% ${y}%, rgba(150,255,200,0.4), rgba(120,140,255,0.2), transparent 70%)`;
+      requestAnimationFrame(animate);
     }
-
-    async function act(url, body){
-      await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      refresh();
-    }
-
-    document.getElementById('sendReq').onclick=()=>{
-      const email = document.getElementById('addEmail').value.trim();
-      if(!email) return;
-      act('/api/friends/request',{email});
-      document.getElementById('addEmail').value='';
-    }
-
-    // listen to server events so lists auto-refresh
-    const ev = new EventSource('/events');
-    ev.onmessage = (e)=>{ const m=JSON.parse(e.data); if(m.type?.startsWith('friend')) refresh(); };
-    ev.addEventListener('ping',()=>{});
-
-    refresh();
+    animate();
   </script>
 </body>
 </html>

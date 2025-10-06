@@ -30,6 +30,11 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = SECRET_KEY
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+@app.context_processor
+def inject_globals():
+    from datetime import datetime
+    return dict(datetime=datetime)
+
 # 3. Helper funcs
 
 def current_user():
@@ -149,9 +154,24 @@ def start_realtime_thread():
     except Exception as e:
         print(f"Realtime connection failed: {e}")
 
+@app.route("/")
+def landing_page():
+    # Landing page + lights background
+    return render_template("index.html", datetime=datetime)
+
+@app.route("/about")
+def about_page():
+    # About / Learn More page
+    return render_template("about.html")
+
+@app.route("/login")
+def login_page_redirect():
+    # Redirects to auth page (login/signup combined)
+    return redirect(url_for("auth_page"))
+
 # 5. Authentication routes
 
-@app.route("/")
+@app.route("/home")
 def home():
     # Main chat hub — show all messages and dummy peer(chat not implemented yet)
     if not current_user():

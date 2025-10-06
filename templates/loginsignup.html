@@ -7,10 +7,13 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
 </head>
 <body>
-  <div class="auth-wrapper">
-    <div class="auth-box">
+  <!-- ✨ Light Rays Background -->
+  <div class="light-rays-bg">
+    <div class="light-overlay"></div>
+  </div>
 
-      <!-- Animated Logo -->
+  <div class="auth-wrapper" bg-color="#808080">
+    <div class="auth-box">
       <h1 class="logo-text">Loopin</h1>
 
       <div class="form-toggle">
@@ -34,10 +37,18 @@
         <input type="password" name="password" placeholder="Password" required>
         <button type="submit">Sign Up</button>
       </form>
-
     </div>
   </div>
 
   <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+  <script>
+    /* optional parallax mouse effect */
+    document.addEventListener('mousemove', e => {
+      const x = (e.clientX / window.innerWidth - 0.5) * 20;
+      const y = (e.clientY / window.innerHeight - 0.5) * 20;
+      document.documentElement.style.setProperty('--mouse-x', `${x}deg`);
+      document.documentElement.style.setProperty('--mouse-y', `${y}deg`);
+    });
+  </script>
 </body>
 </html>
