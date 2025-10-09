@@ -29,6 +29,7 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = SECRET_KEY
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+supabase_readonly: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 @app.context_processor
 def inject_globals():
@@ -276,17 +277,33 @@ def logout():
 
 @app.route("/api/users/search")
 def api_users_search():
-    # search users by username (username prefix matching), hides emails
     if not current_user():
-        return jsonify({"error":"auth required"}), 401
-    q = (request.args.get("q") or "").strip()
+        return jsonify({"error": "auth required"}), 401
+
+    q = (request.args.get("q") or "").strip().lower()
     if not q:
-        return jsonify({"users":[]})
-    res = supabase.table("users").select("id,username").ilike("username", f"{q}%").limit(10).execute()
-    # exclude self(user itself)
-    me = current_user()
-    users = [u for u in (res.data or []) if u["id"] != me["id"]]
-    return jsonify({"users": users})
+        return jsonify({"users": []})
+
+    try:
+        # ✅ no filters in Supabase call — Cloudflare-safe
+        res = supabase.table("users").select("id, username").limit(100).execute()
+
+        me = current_user()
+        users = [
+            u for u in (res.data or [])
+            if u["id"] != me["id"] and u["username"].lower().startswith(q)
+        ]
+
+        print("DEBUG found:", users)
+        return jsonify({"users": users})
+    except Exception as e:
+        print("Search error:", e)
+        return jsonify({"users": []})
+
+
+
+
+
 
 @app.route("/friends", methods=["GET"])
 def friends_page():
@@ -596,6 +613,218 @@ def search_users_live():
         print("Search error:", e)
         return jsonify({"results": []})
 
+#api friends add (live, from search dropdown)
+@app.route("/api/friends/add", methods=["POST"])
+def api_add_friend_v2():
+    if not current_user():
+        return jsonify({"error":"auth required"}), 401
+    me = current_user()
+    data = request.get_json(force=True, silent=True) or {}
+    target_id = (data.get("target_id") or "").strip()
+    if not target_id:
+        return jsonify({"error":"missing"}), 400
+    if target_id == me["id"]:
+        return jsonify({"error":"cannot add yourself"}), 400
+
+    # check existing
+    existing = (
+        supabase.table("friends")
+        .select("id,status")
+        .or_(f"(sender_id.eq.{me['id']},receiver_id.eq.{target_id}),(sender_id.eq.{target_id},receiver_id.eq.{me['id']})")
+        .limit(1)
+        .execute()
+    )
+    if existing.data:
+        status = existing.data[0]['status']
+        if status == "pending":
+            return jsonify({"message":"Request already sent"})
+        elif status == "accepted":
+            return jsonify({"message":"Already friends"})
+        elif status == "rejected":
+            # resend new one
+            supabase.table("friends").update({"status":"pending","created_at":datetime.utcnow().isoformat()}).eq("id",existing.data[0]["id"]).execute()
+            return jsonify({"message":"Friend request re-sent"})
+    else:
+        supabase.table("friends").insert({
+            "sender_id": me["id"],
+            "receiver_id": target_id,
+            "status": "pending",
+            "created_at": datetime.utcnow().isoformat()
+        }).execute()
+
+    return jsonify({"message":"Friend request sent!"})
+
+# api friends respond (live, from friends page)
+@app.route("/api/friends/respond", methods=["POST"])
+def api_friends_respond_v2():
+    if not current_user():
+        return jsonify({"error":"auth required"}), 401
+    me = current_user()
+    data = request.get_json(force=True, silent=True) or {}
+    req_id = data.get("request_id")
+    action = data.get("action")
+
+    status = "accepted" if action == "accept" else "rejected"
+    check = supabase.table("friends").select("*").eq("id", req_id).limit(1).execute()
+    if not check.data:
+        return jsonify({"error":"not found"}), 404
+    row = check.data[0]
+    if row["receiver_id"] != me["id"]:
+        return jsonify({"error":"not your request"}), 403
+
+    supabase.table("friends").update({"status":status}).eq("id", req_id).execute()
+
+    # update count
+    if status == "accepted":
+        for uid in (me["id"], row["sender_id"]):
+            count_friends(uid)
+
+    return jsonify({"message": f"Request {status}"})
+
+
+# friends & requests API (For Chat UI Popups)
+
+@app.route("/api/friends", methods=["GET"])
+def api_get_friends_list():
+    if not current_user():
+        return jsonify({"error": "auth required"}), 401
+
+    user = current_user()
+    user_id = user["id"]
+
+    try:
+        # Get accepted friendships
+        data = (
+            supabase.table("friends")
+            .select("*")
+            .or_(f"sender_id.eq.{user_id},receiver_id.eq.{user_id}")
+            .eq("status", "accepted")
+            .execute()
+        )
+        friends = []
+        for row in data.data:
+            friend_id = row["receiver_id"] if row["sender_id"] == user_id else row["sender_id"]
+            friend = (
+                supabase.table("users")
+                .select("username")
+                .eq("id", friend_id)
+                .single()
+                .execute()
+            )
+            if friend.data:
+                friends.append(friend.data["username"])
+
+        return jsonify({"friends": friends})
+    except Exception as e:
+        print("Error fetching friends:", e)
+        return jsonify({"friends": []})
+
+
+@app.route("/api/requests", methods=["GET"])
+def api_get_requests():
+    if not current_user():
+        return jsonify({"error": "auth required"}), 401
+
+    user = current_user()
+    user_id = user["id"]
+
+    try:
+        # Get pending requests (you are receiver)
+        data = (
+            supabase.table("friends")
+            .select("sender_id")
+            .eq("receiver_id", user_id)
+            .eq("status", "pending")
+            .execute()
+        )
+        requests = []
+        for row in data.data:
+            sender = (
+                supabase.table("users")
+                .select("username")
+                .eq("id", row["sender_id"])
+                .single()
+                .execute()
+            )
+            if sender.data:
+                requests.append(sender.data["username"])
+
+        return jsonify({"requests": requests})
+    except Exception as e:
+        print("Error fetching requests:", e)
+        return jsonify({"requests": []})
+
+
+@app.route("/api/requests/accept", methods=["POST"])
+def api_accept_request():
+    if not current_user():
+        return jsonify({"error": "auth required"}), 401
+
+    me = current_user()
+    data = request.get_json(silent=True) or {}
+    sender_username = data.get("sender_username")
+
+    if not sender_username:
+        return jsonify({"error": "missing username"}), 400
+
+    try:
+        sender = (
+            supabase.table("users")
+            .select("id")
+            .eq("username", sender_username)
+            .single()
+            .execute()
+        )
+
+        if not sender.data:
+            return jsonify({"error": "sender not found"}), 404
+
+        sender_id = sender.data["id"]
+        supabase.table("friends").update({"status": "accepted"}).eq("sender_id", sender_id).eq("receiver_id", me["id"]).execute()
+
+        # update counts
+        for uid in (sender_id, me["id"]):
+            count_friends(uid)
+
+        return jsonify({"success": True})
+    except Exception as e:
+        print("Accept request error:", e)
+        return jsonify({"error": "internal error"}), 500
+
+
+@app.route("/api/requests/decline", methods=["POST"])
+def api_decline_request():
+    if not current_user():
+        return jsonify({"error": "auth required"}), 401
+
+    me = current_user()
+    data = request.get_json(silent=True) or {}
+    sender_username = data.get("sender_username")
+
+    if not sender_username:
+        return jsonify({"error": "missing username"}), 400
+
+    try:
+        sender = (
+            supabase.table("users")
+            .select("id")
+            .eq("username", sender_username)
+            .single()
+            .execute()
+        )
+
+        if not sender.data:
+            return jsonify({"error": "sender not found"}), 404
+
+        sender_id = sender.data["id"]
+        supabase.table("friends").delete().eq("sender_id", sender_id).eq("receiver_id", me["id"]).execute()
+
+        return jsonify({"success": True})
+    except Exception as e:
+        print("Decline request error:", e)
+        return jsonify({"error": "internal error"}), 500
+
+
 #  Add friend via AJAX (used by search dropdown “Add”)
 
 @app.route("/api/add_friend", methods=["POST"])
@@ -734,13 +963,33 @@ def api_update_username_v2():
     if exists.data:
         return jsonify({"error": "Username already taken"}), 400
 
-    # Update in Supabase
     supabase.table("users").update({"username": new_username}).eq("id", me["id"]).execute()
 
-    # Also update in current Flask session immediately (DOESNT WORK)
     session["user"]["username"] = new_username
 
     return jsonify({"message": "Username updated successfully", "username": new_username})
+
+@app.route("/api/friend/status")
+def api_friend_status():
+    if not current_user():
+        return jsonify({"error": "auth required"}), 401
+    me = current_user()
+    try:
+        res = supabase.table("friend_requests").select("sender_id, receiver_id, status").execute()
+        data = res.data or []
+        return jsonify({"requests": data})
+    except Exception as e:
+        print("Status error:", e)
+        return jsonify({"requests": []})
+
+@app.route("/api/messages_preview/<target_id>")
+def api_messages_preview(target_id):
+    me = current_user()
+    messages = [
+        {"sender_id": me["id"], "receiver_id": target_id, "content": "Hey there!", "is_me": True},
+        {"sender_id": target_id, "receiver_id": me["id"], "content": "Hello 👋", "is_me": False},
+    ]
+    return jsonify({"messages": messages})
 
 
 # 12. App entrypoint

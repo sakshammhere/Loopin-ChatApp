@@ -1,0 +1,145 @@
+body {
+  margin: 0;
+  background: radial-gradient(circle at top left, #1a1a1a, #000);
+  color: white;
+  font-family: 'Poppins', sans-serif;
+}
+
+.chat-container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 30%;
+  background: #111;
+  border-right: 1px solid #222;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  padding: 15px;
+  border-bottom: 1px solid #222;
+  text-align: center;
+}
+
+.sidebar-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.sidebar-search {
+  padding: 10px;
+}
+
+.sidebar-search input {
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: none;
+  outline: none;
+}
+
+.friend-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.friend-item {
+  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.friend-item:hover {
+  background: #1e1e1e;
+}
+
+.friend-item .avatar {
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fa7e1e, #d62976);
+}
+
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #0b0b0b;
+}
+
+.chat-header {
+  padding: 15px;
+  border-bottom: 1px solid #222;
+  background: #111;
+}
+
+.messages {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.msg {
+  max-width: 60%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  word-wrap: break-word;
+}
+
+.msg.mine {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #fa7e1e, #d62976);
+}
+
+.msg.theirs {
+  align-self: flex-start;
+  background: #333;
+}
+
+.request-banner {
+  background: #222;
+  color: #aaa;
+  padding: 12px;
+  border-radius: 10px;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.message-input {
+  padding: 10px;
+  border-top: 1px solid #222;
+  display: flex;
+  gap: 8px;
+}
+
+.message-input input {
+  flex: 1;
+  border: none;
+  padding: 10px;
+  border-radius: 20px;
+  outline: none;
+}
+
+.message-input button {
+  background: linear-gradient(45deg, #d62976, #fa7e1e);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 0 15px;
+  cursor: pointer;
+}
+
+.loading {
+  color: #999;
+  text-align: center;
+}
