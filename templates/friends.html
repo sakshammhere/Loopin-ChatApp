@@ -20,10 +20,12 @@
 <main class="center stage">
   <div class="card wide">
     <h2>Friends</h2>
-    {% if friends %}
+    {% if friends and friends|length > 0 %}
       <ul class="list">
         {% for f in friends %}
-        <li>@{{ f.users.username if f.sender_id==user.id else f.peer.username }}</li>
+          {% if f.users and f.peer %}
+            <li>@{{ f.users.username if f.sender_id==user.id else f.peer.username }}</li>
+          {% endif %}
         {% endfor %}
       </ul>
     {% else %}
