@@ -68,6 +68,18 @@ def are_friends(user_id: str, peer_id: str) -> bool:
     except Exception:
         return False
 
+def pair_key(a: str, b: str) -> str:
+    return f"{min(a,b)}::{max(a,b)}"
+
+def get_or_create_thread(a: str, b: str):
+    pk = pair_key(a, b)
+    r = supabase.table("threads").select("*").eq("pair_key", pk).limit(1).execute()
+    if r.data:
+        return r.data[0]
+    created = supabase.table("threads").insert({"user_a": a, "user_b": b}).execute()
+    return created.data[0]
+
+
 # 4. Realtime connection setup : uses anon key + correct endpoint
 #    + server-sent events broadcaster so /events stops 404 errors
 
@@ -209,36 +221,59 @@ def auth_page():
 
 @app.route("/signup", methods=["POST"])
 def signup():
-    # Registers a new user
-    username = request.form.get("username", "").strip()
-    email = request.form.get("email", "").strip().lower()
-    password = request.form.get("password", "")
+    try:
+        # Registers a new user
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
 
-    if not username or not email or not password:
-        flash("Please fill all fields", "error")
+        if not username or not email or not password:
+            flash("Please fill all fields", "error")
+            return redirect(url_for("auth_page"))
+
+        print(f"Checking for existing email: {email}")  # Debug log
+        # Check if email exists (case insensitive)
+        existing_email = supabase.table("users").select("id, email").ilike("email", email).execute()
+        print(f"Existing email check result: {existing_email.data}")  # Debug log
+        
+        if existing_email.data:
+            flash(f"Email already registered. Please use a different email.", "error")
+            return redirect(url_for("auth_page"))
+
+        print(f"Checking for existing username: {username}")  # Debug log
+        # Check if username exists
+        existing_username = supabase.table("users").select("id").eq("username", username).execute()
+        print(f"Existing username check result: {existing_username.data}")  # Debug log
+        
+        if existing_username.data:
+            flash("Username already taken. Please choose a different username.", "error")
+            return redirect(url_for("auth_page"))
+
+        # Create new user
+        hashed = hash_password(password)
+        user_data = {
+            "username": username,
+            "email": email,
+            "password_hash": hashed,
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        print(f"Attempting to create user with email: {email}")  # Debug log
+        result = supabase.table("users").insert(user_data).execute()
+        print(f"User creation result: {result.data}")  # Debug log
+        
+        flash("Account created successfully! Please log in.", "info")
         return redirect(url_for("auth_page"))
-
-    # unique username check too
-    exists_u = supabase.table("users").select("id").eq("username", username).limit(1).execute()
-    if exists_u.data:
-        flash("username already taken", "error")
+        
+    except Exception as e:
+        print(f"Signup error - Type: {type(e)}, Error: {str(e)}")  # Debug log
+        if "users_email_key" in str(e):
+            # This means there's a duplicate email in the database
+            print(f"Duplicate email detected: {email}")  # Debug log
+            flash("This email is already registered. Please try logging in or use a different email.", "error")
+        else:
+            flash("An error occurred during signup. Please try again.", "error")
         return redirect(url_for("auth_page"))
-
-    existing = supabase.table("users").select("id").eq("email", email).execute()
-    if existing.data:
-        flash("Email already registered", "error")
-        return redirect(url_for("auth_page"))
-
-    hashed = hash_password(password)
-    user_data = {
-        "username": username,
-        "email": email,
-        "password_hash": hashed,
-        "created_at": datetime.utcnow().isoformat()
-    }
-    supabase.table("users").insert(user_data).execute()
-    flash("Account created successfully! Please log in.", "info")
-    return redirect(url_for("auth_page"))
 
 @app.route("/login", methods=["POST"])
 def login():
@@ -259,7 +294,7 @@ def login():
             flash("Invalid credentials", "error")
             return redirect(url_for("auth_page"))
 
-        # ✅ Store only id + username in session
+        # Store only id + username in session
         session["user"] = {"id": user["id"], "username": user["username"]}
         session.modified = True
 
@@ -293,95 +328,16 @@ def api_users_search_v2():
         return jsonify({"users": []})
 
     try:
-        res = (
-            supabase.table("users")
-            .select("id, username")
-            .or_(f"username.ilike.%{q}%,email.ilike.%{q}%")  # Search both username and email, case-insensitive
-            .limit(10)
-            .execute()
-        )
+        res = supabase.table("users").select("id,username,email")\
+        .or_(f"username.ilike.%{q}%,email.ilike.%{q}%")\
+        .limit(10).execute()
+
         me = current_user()
         users = [u for u in (res.data or []) if u["id"] != me["id"]]
         return jsonify({"users": users})
     except Exception as e:
         print("Search error:", e)
         return jsonify({"users": []})
-
-@app.route("/api/friends/add", methods=["POST"])
-def api_friends_add_v3():
-    me = current_user()
-    if not me:
-        return jsonify({"error": "auth required"}), 401
-    data = request.get_json(force=True)
-    target_id = data.get("target_id")
-    if not target_id:
-        return jsonify({"error": "missing target_id"}), 400
-    if target_id == me["id"]:
-        return jsonify({"error": "cannot add yourself"}), 400
-
-    try:
-        # Check existing friendship/request
-        existing = (
-            supabase.table("friends")
-            .select("id, status")
-            .or_(f"sender_id.eq.{me['id']},receiver_id.eq.{target_id}")
-            .or_(f"sender_id.eq.{target_id},receiver_id.eq.{me['id']}")
-            .limit(1)
-            .execute()
-        )
-        
-        if existing.data:
-            status = existing.data[0]["status"]
-            return jsonify({"message": f"Already {status}"})
-
-        # Create new friend request
-        supabase.table("friends").insert({
-            "sender_id": me["id"],
-            "receiver_id": target_id,
-            "status": "pending",
-            "created_at": datetime.utcnow().isoformat()
-        }).execute()
-        
-        return jsonify({"message": "Friend request sent!"})
-        
-    except Exception as e:
-        print("Friend request error:", e)
-        return jsonify({"error": "Failed to process request"}), 500
-    me = current_user()
-    if not me:
-        return jsonify({"error": "auth required"}), 401
-    data = request.get_json(force=True)
-    target_id = data.get("target_id")
-    if not target_id:
-        return jsonify({"error": "missing target_id"}), 400
-    if target_id == me["id"]:
-        return jsonify({"error": "cannot add yourself"}), 400
-
-    existing = (
-        supabase.table("friends")
-        .select("*")
-        .or_(
-            f"(sender_id.eq.{me['id']},receiver_id.eq.{target_id}),"
-            f"(sender_id.eq.{target_id},receiver_id.eq.{me['id']})"
-        )
-        .limit(1).execute()
-    )
-    if existing.data:
-        status = existing.data[0]["status"]
-        return jsonify({"message": f"Already {status}"})
-
-    supabase.table("friends").insert({
-        "sender_id": me["id"],
-        "receiver_id": target_id,
-        "status": "pending",
-        "created_at": datetime.utcnow().isoformat()
-    }).execute()
-    return jsonify({"message": "Friend request sent!"})
-
-
-
-
-
 
 
 @app.route("/friends", methods=["GET"])
@@ -506,7 +462,7 @@ def _resolve_peer(peer_id: str | None, peer_username: str | None):
             return r.data[0]
     return None
 
-@app.route("/api/messages", methods=["GET"])
+@app.route("/api/messages_convo", methods=["GET"])
 def api_messages():
     # fetch full convo with peer (by id or username), includes timestamps
     if not current_user():
@@ -604,42 +560,6 @@ def requests_page():
     )
     return render_template("requests.html", user=me, incoming=incoming.data or [], outgoing=outgoing.data or [])
 
-@app.route("/api/friends/respond", methods=["POST"])
-def respond_friend_request():
-    # accept/reject a message request; accept moves future chat to messages (friendship updates)
-    if not current_user():
-        return jsonify({"error":"auth required"}), 401
-    me = current_user()
-    data = request.get_json(force=True, silent=True) or {}
-    req_id = data.get("request_id")
-    action = data.get("action")  # "accept" | "reject"
-    if not req_id or action not in ("accept","reject"):
-        return jsonify({"error":"bad input"}), 400
-
-    # load request and validate ownership
-    r = supabase.table("message_requests").select("*").eq("id", req_id).limit(1).execute()
-    if not r.data:
-        return jsonify({"error":"not found"}), 404
-    req = r.data[0]
-    if req["receiver_id"] != me["id"]:
-        return jsonify({"error":"not yours"}), 403
-
-    if action == "reject":
-        supabase.table("message_requests").delete().eq("id", req_id).execute()
-        return jsonify({"status":"rejected"})
-
-    # accept: move this one request into messages and delete it
-    msg = {
-        "sender_id": req["sender_id"],
-        "receiver_id": req["receiver_id"],
-        "content": req["content"],
-        "created_at": req["created_at"]  # keep original timestamp
-    }
-    supabase.table("messages").insert(msg).execute()
-    supabase.table("message_requests").delete().eq("id", req_id).execute()
-    # broadcast to SSE for receiver’s open threads
-    _sse_broadcast({"type":"message", "row": msg})
-    return jsonify({"status":"accepted","moved":msg})
 
 # 8. Profile page (counts + private email)
 
@@ -695,111 +615,255 @@ def search_users_live():
         print("Search error:", e)
         return jsonify({"results": []})
 
-#api friends add (live, from search dropdown)
 @app.route("/api/friends/add", methods=["POST"])
-def api_add_friend_v2():
-    if not current_user():
-        return jsonify({"error":"auth required"}), 401
+def api_friends_add():
     me = current_user()
-    data = request.get_json(force=True, silent=True) or {}
-    target_id = (data.get("target_id") or "").strip()
-    if not target_id:
-        return jsonify({"error":"missing"}), 400
-    if target_id == me["id"]:
-        return jsonify({"error":"cannot add yourself"}), 400
+    if not me:
+        return jsonify({"error": "auth required"}), 401
 
-    # check existing
-    existing = (
-        supabase.table("friends")
-        .select("id,status")
-        .or_(f"(sender_id.eq.{me['id']},receiver_id.eq.{target_id}),(sender_id.eq.{target_id},receiver_id.eq.{me['id']})")
-        .limit(1)
-        .execute()
-    )
-    if existing.data:
-        status = existing.data[0]['status']
-        if status == "pending":
-            return jsonify({"message":"Request already sent"})
-        elif status == "accepted":
-            return jsonify({"message":"Already friends"})
-        elif status == "rejected":
-            # resend new one
-            supabase.table("friends").update({"status":"pending","created_at":datetime.utcnow().isoformat()}).eq("id",existing.data[0]["id"]).execute()
-            return jsonify({"message":"Friend request re-sent"})
-    else:
-        supabase.table("friends").insert({
+    data = request.get_json(force=True, silent=True) or {}
+    target_id = str((data.get("target_id") or "")).strip()  # Ensure string type
+    if not target_id:
+        return jsonify({"error": "missing target_id"}), 400
+    if target_id == str(me["id"]):
+        return jsonify({"error": "cannot add yourself"}), 400
+
+    try:
+        # Verify target user exists
+        target_user = supabase.table("users").select("id,username").eq("id", target_id).single().execute()
+        if not target_user.data:
+            return jsonify({"error": "user not found"}), 404
+
+        pk = pair_key(str(me["id"]), target_id)  # Ensure string IDs
+        print(f"Creating friend request with pair_key: {pk}")  # Debug log
+
+        # Check for existing relationship
+        existing = supabase.table("friends").select("id,status").eq("pair_key", pk).limit(1).execute()
+        if existing.data:
+            status = existing.data[0]["status"]
+            if status == "pending":
+                return jsonify({"message": "Request already pending"})
+            if status == "accepted":
+                return jsonify({"message": "Already friends"})
+            # If rejected, create new pending request
+            now = datetime.utcnow().isoformat()
+            supabase.table("friends").update({
+                "sender_id": me["id"],
+                "receiver_id": target_id,
+                "status": "pending",
+                "created_at": now,
+                "updated_at": now
+            }).eq("id", existing.data[0]["id"]).execute()
+            print(f"Updated friend request: {me['id']} -> {target_id}")  # Debug log
+            return jsonify({"message": "Friend request re-sent"})
+
+        # Insert new pending request
+        now = datetime.utcnow().isoformat()
+        result = supabase.table("friends").insert({
             "sender_id": me["id"],
             "receiver_id": target_id,
             "status": "pending",
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": now,
+            "updated_at": now,
+            "pair_key": pk
         }).execute()
-
-    return jsonify({"message":"Friend request sent!"})
+        print(f"Created new friend request: {me['id']} -> {target_id}")  # Debug log
+        return jsonify({"message":"Friend request sent!", "request_id": result.data[0]["id"] if result.data else None})
+    except Exception as e:
+        print("api_friends_add error:", e, flush=True)  # Better error logging
+        return jsonify({"error": str(e)}), 500
 
 # api friends respond (live, from friends page)
 @app.route("/api/friends/respond", methods=["POST"])
-def api_friends_respond_v2():
-    if not current_user():
-        return jsonify({"error":"auth required"}), 401
+def api_friends_respond():
     me = current_user()
+    if not me:
+        return jsonify({"error":"auth required"}), 401
+
     data = request.get_json(force=True, silent=True) or {}
     req_id = data.get("request_id")
     action = data.get("action")
+    if action not in ("accept", "reject"):
+        return jsonify({"error":"bad action"}), 400
 
-    status = "accepted" if action == "accept" else "rejected"
-    check = supabase.table("friends").select("*").eq("id", req_id).limit(1).execute()
-    if not check.data:
-        return jsonify({"error":"not found"}), 404
-    row = check.data[0]
-    if row["receiver_id"] != me["id"]:
-        return jsonify({"error":"not your request"}), 403
+    try:
+        # Get full request details including sender info
+        row = (
+            supabase.table("friends")
+            .select("*, users:sender_id(username)")
+            .eq("id", req_id)
+            .single()
+            .execute()
+        )
+        if not row.data:
+            return jsonify({"error":"request not found"}), 404
+            
+        fr = row.data
+        if str(fr["receiver_id"]) != str(me["id"]):
+            return jsonify({"error":"not your request"}), 403
 
-    supabase.table("friends").update({"status":status}).eq("id", req_id).execute()
+        status = "accepted" if action == "accept" else "rejected"
+        now = datetime.utcnow().isoformat()
+        
+        # Update request status
+        supabase.table("friends").update({
+            "status": status,
+            "updated_at": now
+        }).eq("id", req_id).execute()
 
-    # update count
-    if status == "accepted":
-        for uid in (me["id"], row["sender_id"]):
-            count_friends(uid)
+        if status == "accepted":
+            try:
+                # Create chat thread for the new friends
+                thread = get_or_create_thread(str(fr["sender_id"]), str(fr["receiver_id"]))
+                print(f"Created chat thread {thread['id']} for friends {fr['sender_id']} and {fr['receiver_id']}")
+                
+                # Update friend counts
+                for uid in (fr["sender_id"], fr["receiver_id"]):
+                    count_friends(uid)
+                
+                return jsonify({
+                    "message": f"Request {status}",
+                    "thread_id": thread["id"],
+                    "friend": {
+                        "id": fr["sender_id"],
+                        "username": fr["users"]["username"]
+                    }
+                })
+            except Exception as e:
+                print(f"Error in post-acceptance processing: {e}", flush=True)
+                # Still return success even if thread creation fails
+                return jsonify({"message": f"Request {status}, but chat setup failed"})
+        
+        return jsonify({"message": f"Request {status}"})
+        
+    except Exception as e:
+        print(f"Error handling friend request: {e}", flush=True)
+        return jsonify({"error": "Failed to process request"}), 500
 
-    return jsonify({"message": f"Request {status}"})
+@app.route("/api/threads", methods=["GET"])
+def api_threads():
+    me = current_user()
+    if not me:
+        return jsonify({"error":"auth required"}), 401
+
+    try:
+        print(f"Fetching chat threads for user {me['id']}")  # Debug log
+        
+        # Get all threads where user is participant and there's an accepted friendship
+        tr = (
+            supabase.table("threads")
+            .select("*")
+            .or_(f"user_a.eq.{me['id']},user_b.eq.{me['id']}")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        
+        threads = []
+        for t in (tr.data or []):
+            try:
+                peer_id = t["user_b"] if t["user_a"] == me["id"] else t["user_a"]
+                
+                # Only include thread if friendship is accepted
+                fr = supabase.table("friends").select("status").eq("pair_key", pair_key(str(me["id"]), str(peer_id))).single().execute()
+                if not fr.data or fr.data["status"] != "accepted":
+                    print(f"Skipping thread {t['id']} - not accepted friends")  # Debug log
+                    continue
+                
+                # Get peer details
+                u = supabase.table("users").select("id,username").eq("id", peer_id).single().execute()
+                peer = u.data if u.data else {"id": peer_id, "username": "unknown"}
+                
+                # Get last message
+                lm = (
+                    supabase.table("messages")
+                    .select("content,created_at,sender_id")
+                    .eq("thread_id", t["id"])
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                last = lm.data[0] if lm.data else None
+                
+                threads.append({
+                    "thread": t,
+                    "peer": peer,
+                    "last": last
+                })
+                print(f"Added thread with peer {peer['username']}")  # Debug log
+                
+            except Exception as e:
+                print(f"Error processing thread {t['id']}: {e}", flush=True)
+                continue
+        
+        print(f"Returning {len(threads)} active chat threads")  # Debug log
+        return jsonify({"threads": threads})
+        
+    except Exception as e:
+        print(f"Error fetching threads: {e}", flush=True)
+        return jsonify({"error": "Failed to load chats"}), 500
+
+@app.route("/api/messages", methods=["GET"])
+def api_messages_v2():
+    me = current_user()
+    if not me:
+        return jsonify({"error":"auth required"}), 401
+
+    thread_id = request.args.get("thread_id")
+    friend_id = request.args.get("friend_id")  # fallback if thread not provided
+    before = request.args.get("before")  # ISO timestamp for pagination
+    limit = int(request.args.get("limit", 50))
+    limit = max(1, min(limit, 200))
+
+    if not (thread_id or friend_id):
+        return jsonify({"messages":[]})
+
+    if not thread_id and friend_id:
+        # Allow creating/using a thread even if not friends yet
+        t = get_or_create_thread(str(me["id"]), str(friend_id))
+        thread_id = t["id"]
+
+    q = supabase.table("messages").select("*").eq("thread_id", thread_id)
+    if before:
+        q = q.lt("created_at", before)
+    msgs = q.order("created_at").limit(limit).execute()
+    return jsonify({"messages": msgs.data or []})
+
+
+@app.route("/api/send_message", methods=["POST"])
+def api_send_message_v3():
+    me = current_user()
+    if not me:
+        return jsonify({"error":"auth required"}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    friend_id = (data.get("friend_id") or "").strip()
+    thread_id = (data.get("thread_id") or "").strip()
+    content = (data.get("content") or "").strip()
+    if not content:
+        return jsonify({"error":"missing content"}), 400
+
+    # resolve thread
+    if not thread_id:
+        if not friend_id:
+            return jsonify({"error":"missing friend_id/thread_id"}), 400
+        t = get_or_create_thread(str(me["id"]), str(friend_id))
+        thread_id = t["id"]
+
+    msg = {
+        "thread_id": thread_id,
+        "sender_id": me["id"],
+        "receiver_id": friend_id if friend_id else None,
+        "content": content,
+        "created_at": datetime.utcnow().isoformat()
+    }
+    supabase.table("messages").insert(msg).execute()
+
+    return jsonify({"success": True, "message": msg})
+
 
 
 # friends & requests API (For Chat UI Popups)
-'''   COMMENTED DUPLICATE
-@app.route("/api/friends", methods=["GET"])
-def api_get_friends_list():
-    if not current_user():
-        return jsonify({"error": "auth required"}), 401
-
-    user = current_user()
-    user_id = user["id"]
-
-    try:
-        # Get accepted friendships
-        data = (
-            supabase.table("friends")
-            .select("*")
-            .or_(f"sender_id.eq.{user_id},receiver_id.eq.{user_id}")
-            .eq("status", "accepted")
-            .execute()
-        )
-        friends = []
-        for row in data.data:
-            friend_id = row["receiver_id"] if row["sender_id"] == user_id else row["sender_id"]
-            friend = (
-                supabase.table("users")
-                .select("username")
-                .eq("id", friend_id)
-                .single()
-                .execute()
-            )
-            if friend.data:
-                friends.append(friend.data["username"])
-
-        return jsonify({"friends": friends})
-    except Exception as e:
-        print("Error fetching friends:", e)
-        return jsonify({"friends": []})   '''
+# v1 version removed - now using v2 version with more complete friend info
 
 @app.route("/api/requests", methods=["GET"])
 def api_friend_requests_v3():
@@ -807,25 +871,38 @@ def api_friend_requests_v3():
     if not me:
         return jsonify({"error": "auth required"}), 401
 
-    data = (
-        supabase.table("friends")
-        .select("id, sender_id, receiver_id, status")
-        .eq("receiver_id", me["id"])
-        .eq("status", "pending")
-        .execute()
-    )
-    reqs = []
-    for row in (data.data or []):
-        sender = (
-            supabase.table("users")
-            .select("username")
-            .eq("id", row["sender_id"])
-            .single()
+    try:
+        # Get ALL pending requests where I am the receiver
+        print(f"Fetching requests for user {me['id']}")  # Debug log
+        data = (
+            supabase.table("friends")
+            .select("*, users:sender_id(username)")  # Get sender's username
+            .eq("receiver_id", me["id"])
+            .eq("status", "pending")
+            .order("created_at", desc=True)
             .execute()
         )
-        if sender.data:
-            reqs.append({"id": row["id"], "username": sender.data["username"]})
-    return jsonify({"requests": reqs})
+        
+        requests = []
+        for row in (data.data or []):
+            try:
+                requests.append({
+                    "id": row["id"],
+                    "username": row["users"]["username"],
+                    "sender_id": row["sender_id"],
+                    "created_at": row["created_at"],
+                    "pair_key": row.get("pair_key", "")
+                })
+            except Exception as e:
+                print(f"Error processing request row: {e}", flush=True)
+                continue
+        
+        print(f"Found {len(requests)} pending requests for user {me['id']}")  # Debug log
+        print(f"Request data: {requests}")  # Debug log for request content
+        return jsonify({"requests": requests})
+    except Exception as e:
+        print("Error fetching requests:", e, flush=True)  # Better error logging
+        return jsonify({"requests": []})
 
 
 
@@ -851,48 +928,8 @@ def api_friend_respond_v3():
     return jsonify({"message": f"Request {status}"})
 
 
-#  Add friend via AJAX (used by search dropdown “Add”)
-''' COMMENTED DUPLICATE
-@app.route("/api/add_friend", methods=["POST"])
-def api_add_friend():
-    if not current_user():
-        return jsonify({"error": "Unauthorized"}), 401
-    sender_id = current_user()["id"]
-    payload = request.get_json(silent=True) or {}
-    receiver_id = (payload.get("receiver_id") or "").strip()
-
-    if not receiver_id:
-        return jsonify({"error": "Missing receiver_id"}), 400
-
-    if sender_id == receiver_id:
-        return jsonify({"error": "Cannot add yourself"}), 400
-
-    # deny duplicates/pending
-    existing = (
-        supabase.table("friends")
-        .select("id,status")
-        .or_(f"(sender_id.eq.{sender_id},receiver_id.eq.{receiver_id}),(sender_id.eq.{receiver_id},receiver_id.eq.{sender_id})")
-        .limit(1).execute()
-    )
-    if existing.data:
-        return jsonify({"error": f"already {existing.data[0]['status']}"}), 400
-
-    try:
-        supabase.table("friends").insert({
-            "sender_id": sender_id,
-            "receiver_id": receiver_id,
-            "status": "pending",
-            "created_at": datetime.utcnow().isoformat()
-        }).execute()
-
-        # Update friend count for both (optimistic)
-        for uid in (sender_id, receiver_id):
-            count_friends(uid)
-
-        return jsonify({"message": "Friend request sent!"})
-    except Exception as e:
-        print("Add friend error:", e)
-        return jsonify({"error": str(e)}), 500    '''
+# Add friend via AJAX (used by search dropdown “Add”)
+# Older version removed - now using /api/friends/add with pair_key support
 
 # Friend count helper
 
@@ -938,26 +975,7 @@ def sse_events():
     return Response(gen(), mimetype="text/event-stream")
 
 # 10. update username via AJAX
-''' CoMMENTED DUPLICATE
-@app.route("/api/update_username", methods=["POST"])
-def api_update_username():
-    if not current_user():
-        return jsonify({"error":"auth required"}), 401
-    me = current_user()
-    data = request.get_json(silent=True) or {}
-    new_username = (data.get("username") or "").strip()
-    if not new_username:
-        return jsonify({"error":"missing"}), 400
-
-    # uniqueness check
-    exists = supabase.table("users").select("id").eq("username", new_username).limit(1).execute()
-    if exists.data and exists.data[0]["id"] != me["id"]:
-        return jsonify({"error":"taken"}), 400
-
-    supabase.table("users").update({"username": new_username}).eq("id", me["id"]).execute()
-    # sync session
-    session["user"]["username"] = new_username
-    return jsonify({"ok": True})    '''
+# v1 version removed - now using v2 version with better error handling
 
 # 11. Classic endpoints your templates may call (back-compat)
 
@@ -1067,27 +1085,35 @@ def api_get_messages(friend_id):
     )
     return jsonify({"messages": r.data or []})
 
-@app.route("/api/send_message", methods=["POST"])
-def api_send_message_v2():
+# v2 version removed - now using v3 version with thread support
+
+@app.route("/api/profile/stats", methods=["GET"])
+def api_profile_stats():
+    if not current_user():
+        return jsonify({"error": "auth required"}), 401
     me = current_user()
-    if not me:
-        return jsonify({"error":"auth required"}), 401
 
-    data = request.get_json(force=True, silent=True) or {}
-    friend_id = data.get("friend_id")
-    content = (data.get("content") or "").strip()
-    if not content or not friend_id:
-        return jsonify({"error":"missing"}), 400
+    # friends count (accepted only)
+    f = (
+        supabase.table("friends")
+        .select("id", count="exact")
+        .or_(f"sender_id.eq.{me['id']},receiver_id.eq.{me['id']}")
+        .eq("status", "accepted").execute()
+    )
+    friends_count = f.count or 0
 
-    msg = {
-        "sender_id": me["id"],
-        "receiver_id": friend_id,
-        "content": content,
-        "created_at": datetime.utcnow().isoformat()
-    }
-    supabase.table("messages").insert(msg).execute()
-    _sse_broadcast({"type": "message", "row": msg})
-    return jsonify({"success": True, "message": msg})
+    # loops placeholder
+    loops_count = 0
+
+    # latest username
+    u = supabase.table("users").select("username").eq("id", me["id"]).limit(1).execute()
+    username = u.data[0]["username"] if u.data else me["username"]
+
+    return jsonify({
+        "username": username,
+        "friends_count": friends_count,
+        "loops_count": loops_count
+    })
 
 
 # 12. App entrypoint

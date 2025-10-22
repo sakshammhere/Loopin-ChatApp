@@ -4,72 +4,116 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Loopin Chat</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='chat.css') }}">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
-    *{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',sans-serif;}
-    body{background:radial-gradient(circle at top left,#0f0f0f,#1a1a1a);color:#fff;height:100vh;display:flex;}
-    .sidebar{width:280px;background:linear-gradient(180deg,#141414,#0c0c0c);display:flex;flex-direction:column;padding:1.25rem;border-right:1px solid rgba(255,255,255,.08);position:relative;}
-    .top-logout{position:absolute;left:12px;top:10px;background:transparent;border:none;color:#a3a3a3;cursor:pointer;padding:.25rem .5rem;border-radius:8px;transition:.2s;}
-    .top-logout:hover{color:#fff;text-shadow:0 0 10px #ec4899;}
-    .user-section{text-align:left;padding-top:1.6rem;margin-bottom:1rem;}
-    .username{font-size:1.6rem;font-weight:700;color:#fff;letter-spacing:.5px;}
-    .nav{display:flex;gap:1rem;margin:.75rem 0 1.25rem;}
-    .nav a{color:#8b5cf6;text-decoration:none;font-size:1rem;transition:.25s;cursor:pointer;}
-    .nav a:hover{color:#c084fc;}
-    .search-box{position:relative;}
-    .search-box input{width:100%;padding:.8rem;border-radius:12px;background:#1e1e1e;border:none;color:#fff;outline:none;margin-bottom:1rem;transition:.3s;}
-    .search-box input:focus{box-shadow:0 0 8px #8b5cf6;}
-    .search-results{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:.6rem;position:absolute;top:55px;width:100%;max-height:240px;overflow-y:auto;z-index:30;}
-    .search-result{display:flex;justify-content:space-between;align-items:center;background:#181818;border-radius:10px;padding:.5rem .7rem;margin-bottom:.4rem;transition:.2s;}
-    .search-result:hover{background:#262626;}
-    .search-result span{font-weight:500;}
-    .search-result button{background:linear-gradient(90deg,#8b5cf6,#ec4899);border:none;color:#fff;padding:.35rem .7rem;border-radius:8px;cursor:pointer;font-size:.85rem;transition:.2s;}
-    .search-result button:hover{opacity:.9;}
-    .friends-list{flex-grow:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#8b5cf6 transparent;}
-    .friend{padding:.9rem 1rem;margin-bottom:.5rem;border-radius:12px;background:#181818;transition:.25s;cursor:pointer;}
-    .friend:hover{background:#262626;}
-    .chat-area{flex-grow:1;display:flex;flex-direction:column;justify-content:space-between;background:radial-gradient(circle at center,#101010,#0a0a0a);padding:1rem 2rem;position:relative;overflow:hidden;}
-    .chat-box{flex-grow:1;display:flex;flex-direction:column;justify-content:flex-end;overflow-y:auto;padding-bottom:1rem;}
-    .chat-header{text-align:center;color:#ec4899;font-size:1.3rem;margin-bottom:.6rem;}
-    .msg{max-width:70%;margin:.4rem;padding:.6rem .9rem;border-radius:12px;word-wrap:break-word;}
-    .me{background:#8b5cf6;align-self:flex-end;}
-    .them{background:#262626;align-self:flex-start;}
-    .loopin-logo{position:absolute;top:1rem;left:50%;transform:translateX(-50%);font-size:1.8rem;font-weight:700;letter-spacing:2px;background:linear-gradient(90deg,#8b5cf6,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;cursor:pointer;animation:glow 2s infinite alternate;user-select:none;}
-    @keyframes glow{from{text-shadow:0 0 10px #8b5cf6;}to{text-shadow:0 0 25px #ec4899;}}
-    .animation-container{position:relative;width:300px;height:300px;margin:auto;}
-    .boy{position:absolute;width:80px;height:80px;background:radial-gradient(circle at top,#8b5cf6,#1e1e1e);border-radius:50%;left:50%;top:50%;transform:translate(-50%,-50%);box-shadow:0 0 25px rgba(139,92,246,.8);animation:pulse 2.5s ease-in-out infinite;}
-    @keyframes pulse{0%,100%{transform:translate(-50%,-50%) scale(1);box-shadow:0 0 20px #8b5cf6;}50%{transform:translate(-50%,-50%) scale(1.1);box-shadow:0 0 40px #ec4899;}}
-    .orbit{position:absolute;width:220px;height:220px;border:2px dashed rgba(255,255,255,.12);border-radius:50%;top:50%;left:50%;transform:translate(-50%,-50%);animation:spin 10s linear infinite;}
-    .orbit span{position:absolute;width:30px;height:30px;background:linear-gradient(135deg,#8b5cf6,#ec4899);border-radius:50%;box-shadow:0 0 10px #8b5cf6;animation:glowOrbit 2s infinite ease-in-out alternate;}
-    @keyframes glowOrbit{from{box-shadow:0 0 10px #8b5cf6;transform:scale(1);}to{box-shadow:0 0 25px #ec4899;transform:scale(1.15);}}
-    .orbit span:nth-child(1){top:0;left:50%;transform:translateX(-50%);}
-    .orbit span:nth-child(2){bottom:0;left:50%;transform:translateX(-50%);}
-    .orbit span:nth-child(3){left:0;top:50%;transform:translateY(-50%);}
-    .orbit span:nth-child(4){right:0;top:50%;transform:translateY(-50%);}
-    @keyframes spin{from{transform:translate(-50%,-50%) rotate(0deg);}to{transform:translate(-50%,-50%) rotate(360deg);}}
-    .message-input{display:flex;margin-top:1rem;}
-    .message-input input{flex-grow:1;padding:.8rem 1rem;border:none;border-radius:20px;outline:none;background:#1e1e1e;color:#fff;margin-right:.8rem;}
-    .message-input button{padding:.8rem 1.5rem;border:none;border-radius:20px;background:linear-gradient(90deg,#8b5cf6,#ec4899);color:#fff;font-weight:600;cursor:pointer;transition:.25s;}
-    .message-input button:hover{opacity:.9;transform:scale(1.04);}
-    .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;z-index:50;}
-    .modal{width:min(92vw,420px);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:1rem;box-shadow:0 10px 40px rgba(0,0,0,.5),inset 0 0 40px rgba(139,92,246,.08);animation:fadeIn .18s ease-out;}
-    @keyframes fadeIn{from{transform:translateY(6px);opacity:0;}to{transform:translateY(0);opacity:1;}}
-    .modal h3{font-size:1.1rem;font-weight:700;margin-bottom:.6rem;letter-spacing:.3px;}
-    .modal .list{max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:.5rem;}
-    .chip{background:#181818;border:1px solid rgba(255,255,255,.06);padding:.75rem .9rem;border-radius:12px;display:flex;align-items:center;justify-content:space-between;}
-    .chip .name{font-weight:500;}
-    .row{display:flex;gap:.5rem;}
-    .btn{border:none;padding:.55rem .9rem;border-radius:10px;cursor:pointer;font-weight:600;}
-    .btn-primary{background:linear-gradient(90deg,#8b5cf6,#ec4899);color:#fff;}
-    .btn-ghost{background:transparent;color:#e5e5e5;border:1px solid rgba(255,255,255,.12);}
-    .divider{height:1px;background:rgba(255,255,255,.08);margin:.75rem 0;}
-    .input{width:100%;padding:.7rem .9rem;border-radius:12px;background:#121212;border:1px solid rgba(255,255,255,.08);color:#fff;outline:none;}
-    .hint{font-size:.78rem;color:#a3a3a3;margin-top:.35rem;}
-    .error{color:#fb7185;font-size:.82rem;margin-top:.35rem;display:none;}
-    .hidden{display:none;}
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Poppins', sans-serif; }
+body { height: 100vh; width: 100vw; background: #0b0b0b; color: #fff; display: flex; overflow: hidden; }
+
+/* ---------- SIDEBAR ---------- */
+.sidebar {
+  width: 25%; min-width: 260px; background: #111;
+  display: flex; flex-direction: column; border-right: 1px solid #222;
+}
+.top-logout { background: transparent; border: none; color: #aaa; cursor: pointer; padding: .6rem 1rem; text-align: left; transition: .2s; }
+.top-logout:hover { color: #fff; }
+.user-section { padding: 1rem; border-bottom: 1px solid #222; }
+.username { font-size: 1.3rem; font-weight: 600; color: #fff; }
+.nav { display: flex; gap: 1rem; margin-top: .6rem; }
+.nav a { color: #8b5cf6; text-decoration: none; cursor: pointer; transition: .2s; }
+.nav a:hover { color: #c084fc; }
+.search-box { padding: 1rem; }
+.search-box input { width: 100%; padding: .6rem .8rem; border: none; border-radius: 10px; background: #1e1e1e; color: #fff; outline: none; }
+.friends-list { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #8b5cf6 transparent; }
+.friend { padding: .9rem 1rem; border-bottom: 1px solid #222; cursor: pointer; transition: .2s; }
+.friend:hover { background: #1e1e1e; }
+
+/* ---------- CHAT AREA ---------- */
+.chat-area { flex: 1; display: flex; flex-direction: column; position: relative; background: #0f0f0f; }
+.loopin-logo {
+  position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+  font-size: 1.6rem; font-weight: 700;
+  background: linear-gradient(90deg,#8b5cf6,#ec4899);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  animation: glow 2s infinite alternate; pointer-events: none;
+}
+@keyframes glow { from { text-shadow: 0 0 10px #8b5cf6; } to { text-shadow: 0 0 25px #ec4899; } }
+.chat-topbar { height: 60px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 1.2rem; background: #1a1a1a; border-bottom: 1px solid #222; }
+.chat-peer { font-weight: 600; font-size: 1rem; color: #fff; }
+.hidden { display: none !important; }
+
+/* Messages area */
+.chat-box { flex: 1; overflow-y: auto; padding: 1rem 1.5rem; display: flex; flex-direction: column; scroll-behavior: smooth; }
+.msg { max-width: 70%; margin: .4rem 0; padding: .6rem 1rem; border-radius: 14px; word-wrap: break-word; }
+.me { align-self: flex-end; background: linear-gradient(135deg,#8b5cf6,#ec4899); }
+.them { align-self: flex-start; background: #262626; }
+
+/* Input area */
+.message-input { display: flex; align-items: center; padding: .8rem 1rem; background: #111; border-top: 1px solid #222; }
+.message-input input { flex: 1; border: none; outline: none; background: #1e1e1e; color: #fff; padding: .7rem 1rem; border-radius: 20px; margin-right: .5rem; }
+.icon-btn { background: transparent; border: none; color: #ccc; font-size: 1.3rem; cursor: pointer; margin-right: .3rem; }
+.icon-btn:hover { color: #fff; }
+.message-input button { border: none; border-radius: 20px; background: linear-gradient(90deg,#8b5cf6,#ec4899); color: #fff; padding: .7rem 1.4rem; font-weight: 600; cursor: pointer; transition: .2s; }
+.message-input button:hover { transform: scale(1.05); }
+
+/* Emoji palette */
+.emoji-palette {
+  position: absolute; bottom: 80px; left: 20px; z-index: 10;
+  background: #141414; border: 1px solid rgba(255,255,255,.1);
+  border-radius: 12px; padding: .5rem;
+  display: grid; grid-template-columns: repeat(8, 1.5rem); gap: .3rem;
+  box-shadow: 0 0 25px rgba(0,0,0,.6);
+}
+
+/* Idle animation */
+.animation-container { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 300px; height: 300px; }
+.boy {
+  position: absolute; width: 80px; height: 80px;
+  background: radial-gradient(circle at top,#8b5cf6,#1e1e1e);
+  border-radius: 50%; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  box-shadow: 0 0 25px rgba(139,92,246,.8);
+  animation: pulse 2.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { transform:translate(-50%,-50%) scale(1); box-shadow:0 0 20px #8b5cf6; }
+  50% { transform:translate(-50%,-50%) scale(1.1); box-shadow:0 0 40px #ec4899; }
+}
+.orbit {
+  position: absolute; width: 220px; height: 220px;
+  border: 2px dashed rgba(255,255,255,.12);
+  border-radius: 50%; top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  animation: spin 10s linear infinite;
+}
+.orbit span {
+  position: absolute; width: 30px; height: 30px;
+  background: linear-gradient(135deg,#8b5cf6,#ec4899);
+  border-radius: 50%; box-shadow: 0 0 10px #8b5cf6;
+}
+.orbit span:nth-child(1){ top:0; left:50%; transform:translateX(-50%);}
+.orbit span:nth-child(2){ bottom:0; left:50%; transform:translateX(-50%);}
+.orbit span:nth-child(3){ left:0; top:50%; transform:translateY(-50%);}
+.orbit span:nth-child(4){ right:0; top:50%; transform:translateY(-50%);}
+@keyframes spin { from{transform:translate(-50%,-50%) rotate(0);} to{transform:translate(-50%,-50%) rotate(360deg);} }
+
+/* ---------- MODALS ---------- */
+.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); backdrop-filter: blur(2px); display: none; align-items: center; justify-content: center; z-index: 50; }
+.modal {
+  width: min(92vw, 420px);
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 18px;
+  padding: 1rem;
+  box-shadow: 0 10px 40px rgba(0,0,0,.5), inset 0 0 40px rgba(139,92,246,.08);
+  animation: fadeIn .18s ease-out;
+}
+@keyframes fadeIn { from { transform: translateY(6px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   </style>
 </head>
+
 <body>
+  <!-- Sidebar -->
   <div class="sidebar">
     <button class="top-logout" id="btnLogoutTop">⟵ Logout</button>
     <div class="user-section">
@@ -89,19 +133,26 @@
     <div class="friends-list" id="friendsSidebar"></div>
   </div>
 
+  <!-- Chat Area -->
   <div class="chat-area">
     <div class="loopin-logo" id="loopinLogo">loopin</div>
+    <div class="chat-topbar">
+      <div class="chat-peer" id="chatPeerName">Select a chat</div>
+    </div>
+
     <div class="chat-box" id="chatBox">
-      <div class="animation-container">
+      <div class="animation-container" id="idleAnimation">
         <div class="boy"></div>
         <div class="orbit"><span></span><span></span><span></span><span></span></div>
       </div>
     </div>
 
     <div class="message-input">
+      <button class="icon-btn" id="emojiBtn" title="Emoji">😊</button>
       <input type="text" placeholder="Message..." id="msgInput" disabled />
       <button id="sendBtn" disabled>Send</button>
     </div>
+    <div id="emojiPalette" class="emoji-palette hidden"></div>
   </div>
 
   <!-- Friends Modal -->
@@ -128,6 +179,10 @@
   <div class="backdrop" id="modalProfile">
     <div class="modal">
       <h3>Profile</h3>
+      <div class="row gap mt" style="margin-bottom:10px;">
+        <div class="chip">Friends: <span id="profileFriendsCount">0</span></div>
+        <div class="chip">Loops: <span id="profileLoopsCount">0</span></div>
+      </div>
       <label for="usernameInput" style="font-weight:600;font-size:.95rem;">Username</label>
       <input id="usernameInput" class="input" placeholder="Enter new username"/>
       <div class="hint">3–20 chars. Letters or letters+numbers. No symbols. Must contain at least one letter.</div>
@@ -162,7 +217,25 @@ function openModal(id){document.getElementById(id).style.display='flex';}
 function closeModal(el){el.closest('.backdrop').style.display='none';}
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=e=>closeModal(e.target));
 
-// --- Sidebar friends ---
+const myId = {{ user.id|tojson }};
+let sendHandlerAttached = false;
+
+// Profile modal
+document.getElementById("linkProfile").onclick = async () => {
+  try {
+    const r = await fetch("/api/profile/stats");
+    const d = await r.json();
+    document.getElementById("profileFriendsCount").textContent = d.friends_count ?? "0";
+    document.getElementById("profileLoopsCount").textContent = d.loops_count ?? "0";
+    document.getElementById("usernameInput").value = d.username ?? "";
+  } catch (e) {
+    document.getElementById("profileFriendsCount").textContent = "-";
+    document.getElementById("profileLoopsCount").textContent = "-";
+  }
+  openModal("modalProfile");
+};
+
+// Sidebar friends
 async function refreshSidebar(){
   try{
     const r=await fetch("/api/friends/list");
@@ -181,7 +254,7 @@ async function refreshSidebar(){
 }
 refreshSidebar();
 
-// --- Search friends ---
+// Search friends
 const sInput=document.getElementById("searchInput"),sRes=document.getElementById("searchResults");
 let timer;
 sInput.addEventListener("input",()=>{
@@ -202,58 +275,35 @@ sInput.addEventListener("input",()=>{
       name.textContent=u.username;
       const add=document.createElement("button");
       add.textContent="Add Friend";
-      add.onclick=async()=>{
-        await fetch("/api/friends/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target_id:u.id})});
-        add.textContent="Sent ✓";add.disabled=true;
-      };
+      add.onclick=async()=>{await fetch("/api/friends/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target_id:u.id})});add.textContent="Sent ✓";add.disabled=true;};
       const chat=document.createElement("button");
       chat.textContent="Chat";
       chat.style.background="#1e1e1e";chat.style.border="1px solid rgba(255,255,255,.2)";
       chat.onclick=()=>openChat(u.id,u.username);
       const act=document.createElement("div");
-      act.style.display="flex";act.style.gap="6px";
-      act.append(add,chat);
-      div.append(name,act);
-      sRes.append(div);
+      act.style.display="flex";act.style.gap="6px";act.append(add,chat);
+      div.append(name,act);sRes.append(div);
     });
   },300);
 });
 document.addEventListener("click",e=>{if(!sRes.contains(e.target)&&!sInput.contains(e.target))sRes.classList.add("hidden");});
 
-// --- Requests modal ---
-// Friends modal handler
+// Friends modal
 document.getElementById("linkFriends").onclick=async()=>{
-  const list=document.getElementById("friendsList");
-  list.innerHTML="";
-  const r=await fetch("/api/friends/list");
-  const d=await r.json();
+  const list=document.getElementById("friendsList");list.innerHTML="";
+  const r=await fetch("/api/friends/list");const d=await r.json();
   const friends=d.friends||[];
-  if(!friends.length){
-    list.innerHTML="<div class='chip'><span>No friends added yet!</span></div>";
-    openModal("modalFriends");
-    return;
-  }
+  if(!friends.length){list.innerHTML="<div class='chip'><span>No friends added yet!</span></div>";openModal("modalFriends");return;}
   friends.forEach(f=>{
-    const chip=document.createElement("div");
-    chip.className="chip";
-    chip.innerHTML=`<span>@${f.username}</span>`;
-    const row=document.createElement("div");
-    row.className="row";
-    const chatBtn=document.createElement("button");
-    chatBtn.className="btn btn-primary";
-    chatBtn.textContent="Chat";
-    chatBtn.onclick=()=>{
-      closeModal(chatBtn);
-      openChat(f.id, f.username);
-    };
-    row.append(chatBtn);
-    chip.append(row);
-    list.append(chip);
-  });
-  openModal("modalFriends");
+    const chip=document.createElement("div");chip.className="chip";chip.innerHTML=`<span>@${f.username}</span>`;
+    const row=document.createElement("div");row.className="row";
+    const chatBtn=document.createElement("button");chatBtn.className="btn btn-primary";chatBtn.textContent="Chat";
+    chatBtn.onclick=()=>{closeModal(chatBtn);openChat(f.id,f.username);};
+    row.append(chatBtn);chip.append(row);list.append(chip);
+  });openModal("modalFriends");
 };
 
-// Requests modal handler
+// Requests modal
 document.getElementById("linkRequests").onclick=async()=>{
   const list=document.getElementById("requestsList");list.innerHTML="";
   const r=await fetch("/api/requests");const d=await r.json();const req=d.requests||[];
@@ -266,53 +316,87 @@ document.getElementById("linkRequests").onclick=async()=>{
     const dec=document.createElement("button");dec.className="btn btn-ghost";dec.textContent="Decline";
     dec.onclick=async()=>{await fetch("/api/requests/respond",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({request_id:o.id,action:"reject"})});chip.remove();};
     row.append(acc,dec);chip.append(row);list.append(chip);
-  });
-  openModal("modalRequests");
+  });openModal("modalRequests");
 };
 
-// --- Chat logic ---
-let currentChatId=null;
-async function openChat(id,username){
-  currentChatId=id;
+// Chat logic
+let currentThreadId = null, currentFriendId = null;
+
+async function openChat(friendId, username){
+  const chatPeer=document.getElementById("chatPeerName");
   const box=document.getElementById("chatBox");
-  box.innerHTML=`<div class='chat-header'>Chat with ${username}</div>`;
-  const r=await fetch(`/api/messages/${id}`);
+  const idle=document.getElementById("idleAnimation");
+  if(idle) idle.style.display="none";
+  chatPeer.textContent=username;
+  box.innerHTML="";
+  const r=await fetch(`/api/messages?friend_id=${encodeURIComponent(friendId)}&limit=50`);
   const d=await r.json();
   const msgs=d.messages||[];
-  const myId = {{ user.id|tojson }};
+  currentFriendId=friendId;
+  currentThreadId=msgs.length?msgs[0].thread_id:null;
   msgs.forEach(m=>{
     const div=document.createElement("div");
-    div.className = "msg " + (m.sender_id === myId ? "me" : "them");
+    div.className="msg "+(m.sender_id===myId?"me":"them");
     div.textContent=m.content;
     box.append(div);
   });
   document.getElementById("msgInput").disabled=false;
   document.getElementById("sendBtn").disabled=false;
   box.scrollTop=box.scrollHeight;
+  if(!sendHandlerAttached){
+    document.getElementById("sendBtn").onclick=sendMessage;
+    document.getElementById("msgInput").addEventListener("keydown",e=>{
+      if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage();}
+    });
+    sendHandlerAttached=true;
+  }
+  const sidebar=document.getElementById("friendsSidebar");
+  const children=Array.from(sidebar.children);
+  const idx=children.findIndex(div=>div.textContent===username);
+  if(idx>0){const friendDiv=children[idx];sidebar.removeChild(friendDiv);sidebar.insertBefore(friendDiv,sidebar.firstChild);}
 }
 
-// --- Send message ---
-document.getElementById("sendBtn").onclick=async()=>{
+async function sendMessage(){
   const input=document.getElementById("msgInput");
   const content=input.value.trim();
-  if(!content||!currentChatId)return;
-  const r=await fetch("/api/send_message",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({friend_id:currentChatId,content})});
+  if(!content||(!currentThreadId&&!currentFriendId))return;
+  const r=await fetch("/api/send_message",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({thread_id:currentThreadId,friend_id:currentFriendId,content})});
   const d=await r.json();
-  if(d.success){
-    const box=document.getElementById("chatBox");
-    const div=document.createElement("div");
-    div.className="msg me";
-    div.textContent=content;
-    box.append(div);
-    box.scrollTop=box.scrollHeight;
-    input.value="";
-  }
+  if(d.success){input.value="";if(d.message&&d.message.thread_id){currentThreadId=d.message.thread_id;}}
+}
+
+// Real-time updates
+const es=new EventSource("/events");
+es.onmessage=(ev)=>{
+  try{
+    const data=JSON.parse(ev.data);
+    if(data.type==="message"){
+      const m=data.row;
+      if(m.thread_id&&m.thread_id===currentThreadId){
+        const box=document.getElementById("chatBox");
+        const div=document.createElement("div");
+        div.className="msg "+(m.sender_id===myId?"me":"them");
+        div.textContent=m.content;
+        box.append(div);box.scrollTop=box.scrollHeight;
+      }
+    }
+  }catch(e){console.log("EventSource error:",e);}
 };
 
-// --- Logout ---
+// Logout
 document.getElementById('btnLogoutTop').onclick=()=>openModal('modalLogout');
 document.getElementById('btnLogoutInside').onclick=()=>openModal('modalLogout');
 document.getElementById('btnDoLogout').onclick=async()=>{await fetch('/logout');location.href='/login';};
+
+// Emoji Picker
+const emojiBtn=document.getElementById("emojiBtn");
+const emojiPalette=document.getElementById("emojiPalette");
+const msgInput=document.getElementById("msgInput");
+const emojis=["😀","😅","😂","🤣","😊","😍","😘","😎","🤔","😇","😢","😭","😡","👍","👎","❤️","🔥","⭐","💀","😴","😱","🤩","🤖"];
+emojiPalette.innerHTML=emojis.map(e=>`<button>${e}</button>`).join("");
+emojiBtn.addEventListener("click",e=>{e.stopPropagation();emojiPalette.classList.toggle("hidden");});
+emojiPalette.addEventListener("click",e=>{if(e.target.tagName==="BUTTON"){msgInput.value+=e.target.textContent;}});
+document.addEventListener("click",e=>{if(!emojiPalette.contains(e.target)&&e.target!==emojiBtn){emojiPalette.classList.add("hidden");}});
 </script>
 </body>
 </html>

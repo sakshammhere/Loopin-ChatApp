@@ -143,3 +143,112 @@ body {
   color: #999;
   text-align: center;
 }
+
+/* ---------- Fixed Chat Header ---------- */
+.chat-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1rem;
+  background: linear-gradient(180deg, rgba(16, 16, 16, 0.95), rgba(10, 10, 10, 0.85));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(6px);
+}
+
+.chat-peer {
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.3px;
+  color: #fff;
+}
+
+.chat-right {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.icon-btn {
+  background: #151515;
+  color: #e5e5e5;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.4rem 0.6rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: #1e1e1e;
+}
+
+/* ---------- Messages + Timestamp ---------- */
+.chat-box {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.msg {
+  max-width: 70%;
+  margin: 0.35rem 0.6rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 12px;
+  word-wrap: break-word;
+  position: relative;
+}
+.msg .meta {
+  font-size: 0.72rem;
+  color: #d1d1d1;
+  opacity: 0.75;
+  margin-top: 0.25rem;
+  text-align: right;
+}
+
+.me {
+  background: #8b5cf6;
+  align-self: flex-end;
+}
+.them {
+  background: #262626;
+  align-self: flex-start;
+}
+
+/* ---------- Emoji Palette ---------- */
+.emoji-palette {
+  position: absolute;
+  bottom: 70px;
+  right: 24px;
+  z-index: 8;
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(8, 1.6rem);
+  gap: 0.25rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.emoji-palette button {
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.2rem;
+}
+
+.chat-box::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-box::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #8b5cf6, #ec4899);
+  border-radius: 10px;
+}
+.friend:hover { background: linear-gradient(90deg,#1e1e1e,#151515); }
+
+
+
